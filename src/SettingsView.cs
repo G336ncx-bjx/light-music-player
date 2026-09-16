@@ -311,7 +311,7 @@ namespace Skylark
             });
             StackPanel hiddenRow = Ui.Row(12, hiddenText, restore);
 
-            // 可选：ffmpeg（用于 FLAC / OGG 自动转码）
+            // 可选：ffmpeg（用于 OGG / OPUS 自动转码）
             ffmpegStatus.VerticalAlignment = VerticalAlignment.Center;
             ffmpegStatus.TextTrimming = TextTrimming.CharacterEllipsis;
             Button pickFfmpeg = Ui.Button("选择 ffmpeg.exe", "OutlineButton", delegate
@@ -657,8 +657,8 @@ namespace Skylark
             cacheInfo.Text = CacheText();
             string ffmpeg = Ffmpeg.Locate(s.FfmpegPath);
             ffmpegStatus.Text = string.IsNullOrEmpty(ffmpeg)
-                ? "FLAC 已内置解码，无需额外程序；OGG / OPUS 需要 ffmpeg（未找到）"
-                : "FLAC 已内置解码；OGG / OPUS 会用 ffmpeg 自动转码（已找到）";
+                ? "OGG / OPUS 等格式需要 ffmpeg 才能播放（当前未找到）"
+                : "已找到 ffmpeg：OGG / OPUS 等格式会自动转码播放";
             fontSizeSlider.Value = s.LyricFontSize;
             fontSizeLabel.Text = ((int)s.LyricFontSize) + " px";
             opacitySlider.Value = s.LyricOpacity * 100;

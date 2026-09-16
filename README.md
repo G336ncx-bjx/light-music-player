@@ -91,9 +91,11 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start
 
 | 格式 | 说明 |
 | --- | --- |
-| mp3 / wav / wma / m4a / aac | 直接用 Windows 自带解码播放 |
-| **flac** | **播放器内置解码，不需要安装任何东西**（解码成临时 WAV，切歌后自动清理） |
-| ogg / opus / ape / wv | 检测到系统里有 ffmpeg 时自动转码播放（可选，非必需） |
+| mp3 / wav / wma / m4a / aac | 直接用 Windows 自带解码播放（推荐 mp3） |
+| flac / ogg / opus / ape / wv | **不再支持**：这些文件不会被扫描进音乐库，扫描时会提示忽略了多少个 |
+
+> 说明：v3.0.0 起移除了无损 FLAC 支持（内置解码器已删除）。曲库统一用 mp3/m4a 这类格式，更轻更快；
+> 云端若还有 flac 文件，请在网页版里转成 mp3 后再放回来。
 
 ## 桌面歌词
 
@@ -170,7 +172,7 @@ src/Resources/templates.xaml 列表行数据模板
 ### 一些实现细节
 
 - **零依赖**：直接使用 Windows 自带的 .NET Framework 4.x 与 WPF，用 `csc.exe` 编译，产物是单个 exe，不需要安装 .NET SDK 或任何第三方库。
-- **快速扫描**：时长不依赖解码器，直接解析文件头（MP3 支持 Xing/VBRI 帧数、FLAC 的 STREAMINFO、WAV、M4A/MP4 的 mvhd），并按时长 + 修改时间做缓存。
+- **快速扫描**：时长不依赖解码器，直接解析文件头（MP3 支持 Xing/VBRI 帧数、WAV、M4A/MP4 的 mvhd），并按时长 + 修改时间做缓存。
 - **歌词解析**：自动识别 UTF-8 / UTF-16 / GBK，支持一行多时间戳、`offset` 偏移与翻译行。
 - **播放进度**：MediaPlayer 的位置更新较粗糙，这里用锚点 + 秒表插值，让进度条与歌词滚动更平滑。
 - **配置位置**：`%APPDATA%\Skylark\settings.json`（该目录不可写时自动退回 exe 同级 `data` 目录）。

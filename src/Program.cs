@@ -85,13 +85,6 @@ namespace Skylark
                     args.Length > 2 ? args[2] : null));
                 return;
             }
-            if (args.Length > 0 && args[0] == "--flactest")
-            {
-                AttachConsole();
-                Environment.Exit(FlacTest(args.Length > 1 ? args[1] : null,
-                    args.Length > 2 ? args[2] : null));
-                return;
-            }
 
             bool createdNew;
             Mutex mutex = new Mutex(true, "SkylarkPlayer_SingleInstance", out createdNew);
@@ -433,46 +426,6 @@ namespace Skylark
             {
             }
             return failed == 0 ? 0 : 1;
-        }
-
-        /// <summary>用 API 令牌删除云盘上的文件（同时验证删除接口）。</summary>
-        /// <summary>内置 FLAC 解码器自检：把 FLAC 解成 WAV。</summary>
-        private static int FlacTest(string flacPath, string wavPath)
-        {
-            if (string.IsNullOrEmpty(flacPath) || string.IsNullOrEmpty(wavPath))
-            {
-                Console.WriteLine("usage: Skylark.exe --flactest <in.flac> <out.wav>");
-                return 1;
-            }
-            StringBuilder report = new StringBuilder();
-            try
-            {
-                DateTime started = DateTime.Now;
-                string error;
-                bool ok = FlacDecoder.Decode(flacPath, wavPath, out error);
-                double seconds = (DateTime.Now - started).TotalSeconds;
-                long size = ok && System.IO.File.Exists(wavPath)
-                    ? new System.IO.FileInfo(wavPath).Length : 0;
-                report.AppendLine("decode " + (ok ? "ok" : "failed") + " -> " + wavPath
-                    + " (" + (size / 1024 / 1024) + " MB, " + seconds.ToString("0.0") + "s)"
-                    + (error == null ? "" : " error=" + error));
-                Console.WriteLine(report.ToString());
-                try
-                {
-                    System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
-                        "skylark-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
-                }
-                catch (Exception)
-                {
-                }
-                return ok ? 0 : 1;
-            }
-            catch (Exception ex)
-            {
-                LogCrash(ex);
-                Console.WriteLine("flactest failed: " + ex.Message);
-                return 1;
-            }
         }
 
         /// <summary>用 API 令牌删除云盘上的文件（同时验证删除接口）。</summary>

@@ -683,6 +683,8 @@ namespace Skylark
     {
         public List<Song> Songs;
         public List<DurationEntry> Cache;
+        /// <summary>被跳过的、不再支持的音频文件数量（例如 FLAC）。</summary>
+        public int SkippedUnsupported;
 
         public ScanResult()
         {
@@ -694,7 +696,11 @@ namespace Skylark
     public static class LibraryScanner
     {
         public static readonly string[] Extensions =
-            new string[] { ".mp3", ".flac", ".wav", ".m4a", ".aac", ".wma", ".ogg", ".opus" };
+            new string[] { ".mp3", ".wav", ".m4a", ".aac", ".wma" };
+
+        /// <summary>能识别但不再支持的音频格式（扫描时跳过，并给用户提示）。</summary>
+        public static readonly string[] UnsupportedExtensions =
+            new string[] { ".flac", ".ogg", ".opus", ".ape", ".wv", ".aif", ".aiff" };
 
         public static ScanResult Scan(string dir, bool recursive, List<DurationEntry> cache, List<string> hidden)
         {
@@ -725,7 +731,11 @@ namespace Skylark
                 foreach (string f in Directory.GetFiles(dir, "*.*", opt))
                 {
                     string ext = Path.GetExtension(f).ToLowerInvariant();
-                    if (Array.IndexOf(Extensions, ext) < 0) continue;
+                    if (Array.IndexOf(Extensions, ext) < 0)
+                    {
+                        if (Array.IndexOf(UnsupportedExtensions, ext) >= 0) result.SkippedUnsupported++;
+                        continue;
+                    }
                     if (hiddenSet.Contains(f)) continue;
                     files.Add(f);
                 }

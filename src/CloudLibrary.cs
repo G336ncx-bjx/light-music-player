@@ -47,7 +47,12 @@ namespace Skylark
             foreach (CloudEntry file in files)
             {
                 string ext = Path.GetExtension(file.Name).ToLowerInvariant();
-                if (Array.IndexOf(LibraryScanner.Extensions, ext) < 0) continue;
+                if (Array.IndexOf(LibraryScanner.Extensions, ext) < 0)
+                {
+                    if (Array.IndexOf(LibraryScanner.UnsupportedExtensions, ext) >= 0)
+                        result.SkippedUnsupported++;
+                    continue;
+                }
 
                 string pseudo = PseudoScheme + token + file.Path;
                 if (hiddenSet.Contains(pseudo)) continue;
@@ -183,13 +188,6 @@ namespace Skylark
         {
             return Path.ChangeExtension(FileFor(song), ".mp3");
         }
-
-        /// <summary>FLAC 解码出来的 WAV（临时文件，切歌后会删掉）。</summary>
-        public static string DecodedPath(Song song)
-        {
-            return FileFor(song) + ".decoded.wav";
-        }
-
         public static bool Remove(Song song)
         {
             try
@@ -226,30 +224,6 @@ namespace Skylark
             {
             }
         }
-
-        /// <summary>删除 FLAC 解码产生的临时 WAV（这些文件很大，用完就清）。</summary>
-        public static void ClearDecoded()
-        {
-            try
-            {
-                foreach (string file in System.IO.Directory.GetFiles(Directory, "*.decoded.wav"))
-                {
-                    try
-                    {
-                        // 只清理「陈旧的」：正在播放的实例可能还在用它（刚解码出来的不删）
-                        if (DateTime.Now - File.GetLastWriteTime(file) < TimeSpan.FromHours(3)) continue;
-                        File.Delete(file);
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
-        }
-
         public static long TotalSize()
         {
             long total = 0;

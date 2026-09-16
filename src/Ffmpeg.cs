@@ -7,7 +7,7 @@ namespace Skylark
 {
     /// <summary>
     /// 可选依赖：系统里如果有 ffmpeg，就能把 Windows 播放内核放不了的格式
-    /// （FLAC / OGG / OPUS 等）自动转成 MP3 再播放。
+    /// （OGG / OPUS 等）自动转成 MP3 再播放。
     /// </summary>
     public static class Ffmpeg
     {
@@ -18,7 +18,7 @@ namespace Skylark
         public static bool NeedsTranscode(string path)
         {
             string ext = Path.GetExtension(path).ToLowerInvariant();
-            return ext == ".flac" || ext == ".ogg" || ext == ".opus" || ext == ".ape" || ext == ".wv";
+            return ext == ".ogg" || ext == ".opus" || ext == ".ape" || ext == ".wv";
         }
 
         /// <summary>查找 ffmpeg：先看设置，再看 PATH，再看几个常见安装位置。</summary>
