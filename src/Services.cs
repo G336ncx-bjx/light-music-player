@@ -827,6 +827,8 @@ namespace Skylark
                     if (s.LyricFontSize < 16 || s.LyricFontSize > 96) s.LyricFontSize = 34;
                     if (s.LyricPageFontSize < 12 || s.LyricPageFontSize > 40) s.LyricPageFontSize = 16;
                     if (s.LyricNextLineMode < 0 || s.LyricNextLineMode > 2) s.LyricNextLineMode = 2;
+                    if (s.LyricShadowMode < 0 || s.LyricShadowMode > 2) s.LyricShadowMode = 1;
+                    if (s.LyricOpacity < 0.2 || s.LyricOpacity > 1) s.LyricOpacity = 1.0;
                     // v3.2 起用 cloudCacheMode（1 只留正在听的和下一首 / 2 听过的歌都留）代替老的 cloudCache 开关
                     if (s.CloudCacheEnabled) s.CloudCacheModeValue = 2;
                     else if (s.CloudCacheModeValue != 2) s.CloudCacheModeValue = 1;

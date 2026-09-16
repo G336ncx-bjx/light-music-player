@@ -20,6 +20,9 @@ namespace Skylark
         private RadioButton nextOff;
         private RadioButton nextSmall;
         private RadioButton nextSame;
+        private RadioButton shadowOff;
+        private RadioButton shadowWeak;
+        private RadioButton shadowStrong;
         private readonly TextBlock fontSizeLabel = Ui.Text("", 12, "TextMuted");
         private readonly TextBlock opacityLabel = Ui.Text("", 12, "TextMuted");
         private readonly TextBlock pageSizeLabel = Ui.Text("", 12, "TextMuted");
@@ -369,6 +372,24 @@ namespace Skylark
             nextSame.IsChecked = mode == 2;
         }
 
+        /// <summary>文字描边（阴影）：0 关 / 1 弱 / 2 强。</summary>
+        private void SetShadowMode(int mode)
+        {
+            main.Settings.LyricShadowMode = mode;
+            main.SaveSettings();
+            SyncShadowMode();
+            ApplyDesktopLyrics();
+        }
+
+        private void SyncShadowMode()
+        {
+            int mode = main.Settings.LyricShadowMode;
+            if (shadowOff == null) return;
+            shadowOff.IsChecked = mode == 0;
+            shadowWeak.IsChecked = mode == 1;
+            shadowStrong.IsChecked = mode == 2;
+        }
+
         private void SetCacheMode(int mode)
         {
             main.Settings.CloudCacheMode = mode;
@@ -541,6 +562,18 @@ namespace Skylark
             nextSmall.Click += delegate { SetNextLineMode(1); };
             nextSame.Click += delegate { SetNextLineMode(2); };
 
+            // 文字描边：锁定时没有底色，描边是保证看得清的关键；嫌黑可以关掉
+            shadowOff = new RadioButton();
+            shadowOff.Content = "关";
+            shadowWeak = new RadioButton();
+            shadowWeak.Content = "弱";
+            shadowStrong = new RadioButton();
+            shadowStrong.Content = "强";
+            StackPanel shadowRow = Segmented(shadowOff, shadowWeak, shadowStrong);
+            shadowOff.Click += delegate { SetShadowMode(0); };
+            shadowWeak.Click += delegate { SetShadowMode(1); };
+            shadowStrong.Click += delegate { SetShadowMode(2); };
+
             colorRow.VerticalAlignment = VerticalAlignment.Center;
             foreach (string color in MainWindow.LyricColorPresets) colorRow.Children.Add(ColorSwatch(color));
 
@@ -578,6 +611,7 @@ namespace Skylark
                 StackedRow("歌词字号", "", fontRow),
                 StackedRow("歌词页字号", "", pageFontRow),
                 StackedRow("下一句", "", nextRow),
+                StackedRow("文字描边", "", shadowRow),
                 StackedRow("不透明度", "", opacityRow),
                 StackedRow("歌词颜色", "", Ui.Column(0, colorRow, colorHint)),
                 checks,
@@ -746,6 +780,7 @@ namespace Skylark
             pageSizeSlider.Value = s.LyricPageFontSize;
             pageSizeLabel.Text = ((int)s.LyricPageFontSize) + " px";
             SyncNextLineMode();
+            SyncShadowMode();
             opacitySlider.Value = s.LyricOpacity * 100;
             opacityLabel.Text = ((int)(s.LyricOpacity * 100)) + "%";
             UpdateSwatches();

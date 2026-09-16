@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.2.5";
+    public static final String VERSION = "3.2.6";
 
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma" };
     private static final String[] IGNORED_EXT = { "flac", "ogg", "opus", "ape", "wv", "aif", "aiff", "mp4", "mkv", "avi", "m4v" };

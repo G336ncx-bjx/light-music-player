@@ -346,6 +346,10 @@ namespace Skylark
         [DataMember(Name = "lyricNextLine", Order = 42)]
         public int LyricNextLineMode { get; set; }
 
+        /// <summary>桌面歌词文字的描边（阴影）强度：0 关 / 1 弱（默认）/ 2 强。</summary>
+        [DataMember(Name = "lyricShadow", Order = 43)]
+        public int LyricShadowMode { get; set; }
+
         /// <summary>本地占用策略（对外用这个）。</summary>
         public int CloudCacheMode
         {
@@ -367,6 +371,7 @@ namespace Skylark
             LyricFontSize = 34;
             LyricPageFontSize = 16;
             LyricNextLineMode = 2;
+            LyricShadowMode = 1;
             LyricColor = "#FFFFFF";
             LyricOpacity = 1.0;
             LyricShowTranslation = true;

@@ -67,8 +67,9 @@ namespace Skylark
             frame.Margin = new Thickness(26);
             frame.Background = Brushes.Transparent;
 
-            Configure(currentText, 34, FontWeights.SemiBold);
-            Configure(translationText, 18, FontWeights.Normal);
+            // 当前句用 Bold、第二行用 SemiBold：两句一样亮，靠字重和位置区分
+            Configure(currentText, 34, FontWeights.Bold);
+            Configure(translationText, 18, FontWeights.SemiBold);
             translationText.Margin = new Thickness(0, 2, 0, 0);
 
             panel.Children.Add(currentText);
@@ -138,15 +139,7 @@ namespace Skylark
             block.TextAlignment = TextAlignment.Center;
             block.TextWrapping = TextWrapping.Wrap;
             block.Foreground = Brushes.White;
-            block.Effect = new DropShadowEffect
-            {
-                // 收紧成「描边」：以前 BlurRadius=9 是一团模糊光晕，
-                // 浅色字配上它会把笔画边缘吃掉，看着就又细又虚
-                BlurRadius = 3,
-                ShadowDepth = 0,
-                Opacity = 0.95,
-                Color = Colors.Black
-            };
+            // 描边（阴影）强度在 ApplySettings → ApplyTextShadow 里按设置决定
         }
 
         #region 工具栏
@@ -230,6 +223,7 @@ namespace Skylark
             translationText.Foreground = brush;
             // 只让歌词文字半透明，工具栏始终清晰可见
             panel.Opacity = Math.Max(0.2, Math.Min(1, s.LyricOpacity));
+            ApplyTextShadow();
 
             locked = s.LyricLocked;
             UpdateLockVisual();
@@ -244,6 +238,33 @@ namespace Skylark
             translationText.FontSize = same
                 ? currentText.FontSize
                 : Math.Max(16, currentText.FontSize * 0.78);
+        }
+
+        /// <summary>文字描边（阴影）：0 关 / 1 弱 / 2 强。锁定时没有底色，全靠它保证看得清。</summary>
+        private void ApplyTextShadow()
+        {
+            int mode = main.Settings.LyricShadowMode;
+            if (mode <= 0)
+            {
+                currentText.Effect = null;
+                translationText.Effect = null;
+                return;
+            }
+            double blur = mode == 2 ? 4.5 : 2.5;
+            double opacity = mode == 2 ? 0.95 : 0.6;
+            currentText.Effect = CreateShadow(blur, opacity);
+            translationText.Effect = CreateShadow(blur, opacity);
+        }
+
+        private static DropShadowEffect CreateShadow(double blur, double opacity)
+        {
+            DropShadowEffect effect = new DropShadowEffect();
+            effect.BlurRadius = blur;
+            effect.ShadowDepth = 0;
+            effect.Opacity = opacity;
+            effect.Color = Colors.Black;
+            effect.Freeze();
+            return effect;
         }
 
         private void UpdateLockVisual()
@@ -309,8 +330,9 @@ namespace Skylark
                 // 默认和主行一样大，只靠字重与透明度区分，保证看得清
                 ApplySecondaryFontSize();
                 // 字重和当前句一致：大字号下 Normal 的中文字形太细，看着像没写清楚
-                translationText.FontWeight = currentText.FontWeight;
-                translationText.Opacity = nextMode == 2 ? 0.8 : 0.85;
+                translationText.FontWeight = nextMode == 2 ? FontWeights.SemiBold : FontWeights.Normal;
+                // 同样大小时不再压暗：压暗会在深色桌面上显得「更黑」而不是「更淡」
+                translationText.Opacity = nextMode == 2 ? 1.0 : 0.9;
                 translationText.Visibility = Visibility.Visible;
             }
         }
