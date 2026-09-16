@@ -168,6 +168,12 @@ dist\LightMusic.exe --smoke
 
 # 验证桌面歌词“锁定”是否真的鼠标穿透（用 WindowFromPoint 做命中测试）
 dist\LightMusic.exe --lockcheck
+
+# 把本地文件夹里的歌一次性补齐到云端（缺的上传、同名同大小跳过、大小不同覆盖）
+dist\LightMusic.exe --uploadall <令牌或分享链接> "D:\某个文件夹"
+
+# 整库校验：逐首拉文件头解析时长 + 统计歌词覆盖率
+dist\LightMusic.exe --cloudtest <令牌或分享链接>
 ```
 
 ## 许可证

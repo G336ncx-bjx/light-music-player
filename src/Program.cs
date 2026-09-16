@@ -78,6 +78,13 @@ namespace LightMusic
                     args.Length > 2 ? args[2] : null));
                 return;
             }
+            if (args.Length > 0 && args[0] == "--uploadall")
+            {
+                AttachConsole();
+                Environment.Exit(UploadAll(args.Length > 1 ? args[1] : null,
+                    args.Length > 2 ? args[2] : null));
+                return;
+            }
 
             bool createdNew;
             Mutex mutex = new Mutex(true, "LightMusicPlayer_SingleInstance", out createdNew);
@@ -354,6 +361,79 @@ namespace LightMusic
         /// <summary>真实启动一次界面（显示窗口若干秒后自动退出），用于冒烟测试。</summary>
         /// <summary>上传自检：把本地文件传到云盘分享目录，并列出结果确认。</summary>
         /// <summary>用 API 令牌删除云盘上的文件（同时验证删除接口）。</summary>
+        /// <summary>
+        /// 把本地文件夹补齐到云端：云端没有的上传；同名且大小相同的跳过；
+        /// 同名但大小不同的覆盖。用于「传一次，然后本地就可以删了」的场景。
+        /// </summary>
+        private static int UploadAll(string endpoint, string localFolder)
+        {
+            StringBuilder report = new StringBuilder();
+            if (string.IsNullOrEmpty(endpoint) || string.IsNullOrEmpty(localFolder))
+            {
+                Console.WriteLine("usage: LightMusic.exe --uploadall <endpoint> <local-folder>");
+                return 1;
+            }
+
+            List<string> files = new List<string>();
+            foreach (string file in System.IO.Directory.GetFiles(localFolder, "*.*",
+                System.IO.SearchOption.AllDirectories))
+            {
+                string ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
+                if (ext == ".lrc" || Array.IndexOf(LibraryScanner.Extensions, ext) >= 0) files.Add(file);
+            }
+            report.AppendLine("本地待处理文件: " + files.Count);
+
+            Dictionary<string, long> cloud = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            foreach (CloudEntry entry in CloudClient.ListAllFiles(endpoint, 3))
+            {
+                if (!entry.IsDirectory) cloud[entry.Name] = entry.Size;
+            }
+            report.AppendLine("云端已有文件: " + cloud.Count);
+
+            int uploaded = 0;
+            int skipped = 0;
+            int replaced = 0;
+            int failed = 0;
+            foreach (string file in files)
+            {
+                string name = System.IO.Path.GetFileName(file);
+                long size = new System.IO.FileInfo(file).Length;
+                bool exists = cloud.ContainsKey(name);
+                if (exists && cloud[name] == size)
+                {
+                    skipped++;
+                    continue;
+                }
+                try
+                {
+                    bool wasReplaced;
+                    CloudClient.Upload(endpoint, file, "/", null, out wasReplaced);
+                    uploaded++;
+                    if (exists) replaced++;
+                    report.AppendLine("  ↑ " + name + " (" + size + " 字节)" + (exists ? " [覆盖]" : ""));
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    report.AppendLine("  ✗ " + name + " 上传失败: " + ex.Message);
+                }
+            }
+
+            report.AppendLine("上传 " + uploaded + " 个（其中覆盖 " + replaced + "），跳过 " + skipped
+                + " 个，失败 " + failed + " 个");
+            Console.WriteLine(report.ToString());
+            try
+            {
+                System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                    "lightmusic-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
+            }
+            catch (Exception)
+            {
+            }
+            return failed == 0 ? 0 : 1;
+        }
+
+        /// <summary>用 API 令牌删除云盘上的文件（同时验证删除接口）。</summary>
         private static int CloudDelete(string endpoint, string cloudPath)
         {
             StringBuilder report = new StringBuilder();
@@ -468,6 +548,29 @@ namespace LightMusic
                     if (song.HasLyrics) withLyrics++;
                 }
                 Report(report, "with lyrics = " + withLyrics + "/" + scan.Songs.Count);
+
+                // 逐首拉 512KB 文件头，确认每个音频都能解析出时长（校验整库完整性）
+                int parsed = 0;
+                List<string> broken = new List<string>();
+                foreach (Song song in scan.Songs)
+                {
+                    try
+                    {
+                        int probe = Math.Min(512 * 1024, song.Size > 0 ? (int)song.Size : 512 * 1024);
+                        byte[] probeBytes = CloudClient.DownloadHead(url, song.CloudPath, probe);
+                        double d = DurationReader.ReadBytes(probeBytes, song.Size,
+                            System.IO.Path.GetExtension(song.FileName));
+                        if (d > 10 && d < 36000) parsed++;
+                        else broken.Add(song.FileName);
+                    }
+                    catch (Exception ex)
+                    {
+                        broken.Add(song.FileName + " (" + ex.Message + ")");
+                    }
+                }
+                Report(report, "duration parsed = " + parsed + "/" + scan.Songs.Count
+                    + (broken.Count == 0 ? "" : "，异常：" + string.Join("; ", broken.ToArray())));
+                if (parsed != scan.Songs.Count) failures++;
 
                 Song first = scan.Songs[0];
                 Report(report, "first = " + first.Title + " - " + first.Artist + " (" + first.FileName + ", "
