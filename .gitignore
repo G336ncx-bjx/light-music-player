@@ -1,0 +1,23 @@
+# 构建产物
+dist/
+bin/
+obj/
+*.exe
+*.pdb
+
+# 运行期数据（设置、播放队列等）
+data/
+*.log
+
+# 编辑器 / 系统
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+desktop.ini
+
+# 临时文件
+*.tmp
+*.bak
