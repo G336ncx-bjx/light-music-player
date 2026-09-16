@@ -67,8 +67,6 @@ namespace LightMusic
             columns.ColumnDefinitions[2].Width = Ui.Px(190);
             columns.ColumnDefinitions.Add(new ColumnDefinition());
             columns.ColumnDefinitions[3].Width = Ui.Px(58);
-            columns.ColumnDefinitions.Add(new ColumnDefinition());
-            columns.ColumnDefinitions[4].Width = Ui.Px(36);
 
             Style headerStyle = (Style)Application.Current.Resources["ColumnHeader"];
             SetupHeader(headIndex, "序号", headerStyle, SortField.Default);
@@ -197,9 +195,16 @@ namespace LightMusic
                 if (panel != null && panel.Children.Count > 2) hint = panel.Children[2] as TextBlock;
                 if (hint != null)
                 {
-                    hint.Text = main.Library.Count == 0
-                        ? "把歌曲（歌名 - 歌手.mp3）和同名 .lrc 歌词放进音乐文件夹即可\n当前目录：" + main.Settings.MusicDir
-                        : "没有匹配「" + main.SearchText + "」的歌曲";
+                    if (main.Library.Count == 0)
+                    {
+                        hint.Text = main.IsCloudSource
+                            ? "把歌曲（歌名 - 歌手.mp3）和同名 .lrc 歌词放进云盘分享文件夹，\n然后在「设置」里点「刷新列表」即可\n云盘：" + main.Settings.CloudUrl
+                            : "把歌曲（歌名 - 歌手.mp3）和同名 .lrc 歌词放进音乐文件夹即可\n当前目录：" + main.Settings.MusicDir;
+                    }
+                    else
+                    {
+                        hint.Text = "没有匹配「" + main.SearchText + "」的歌曲";
+                    }
                 }
             }
             UpdateHeaderArrows();
@@ -225,7 +230,7 @@ namespace LightMusic
             if (song != null) main.PlaySong(song);
         }
 
-        /// <summary>单击整行即播放；点右侧「＋」则加入播放队列。</summary>
+        /// <summary>单击整行：播放这一首，并把它加入播放列表（已在列表里则不重复添加）。</summary>
         private void OnItemClick(object sender, MouseButtonEventArgs e)
         {
             DependencyObject source = e.OriginalSource as DependencyObject;
@@ -235,12 +240,6 @@ namespace LightMusic
             if (item == null) return;
             Song song = item.DataContext as Song;
             if (song == null) return;
-
-            if (FindAction(source, "add"))
-            {
-                main.Enqueue(song, false);
-                return;
-            }
             main.PlaySong(song);
         }
 
@@ -278,17 +277,6 @@ namespace LightMusic
             button.Content = Ui.Row(0, iconCanvas, label);
             button.Click += click;
             return button;
-        }
-
-        private static bool FindAction(DependencyObject source, string tag)
-        {
-            while (source != null)
-            {
-                FrameworkElement element = source as FrameworkElement;
-                if (element != null && element.Tag != null && object.Equals(element.Tag, tag)) return true;
-                source = VisualTreeHelper.GetParent(source);
-            }
-            return false;
         }
 
         private static T FindAncestor<T>(DependencyObject source) where T : DependencyObject

@@ -10,7 +10,6 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="190" />
                 <ColumnDefinition Width="58" />
-                <ColumnDefinition Width="36" />
             </Grid.ColumnDefinitions>
 
             <Grid Grid.Column="0">
@@ -43,13 +42,6 @@
                        Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Right"
                        VerticalAlignment="Center" />
 
-            <Border x:Name="addAction" Grid.Column="4" Style="{StaticResource RowAction}"
-                    Tag="add" Opacity="0.4" ToolTip="添加到播放队列"
-                    HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Path Data="M12 5.6 V18.4 M5.6 12 H18.4" Stroke="{DynamicResource TextDim}"
-                      StrokeThickness="2.1" Stretch="Uniform" Width="11" Height="11"
-                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
-            </Border>
         </Grid>
         <DataTemplate.Triggers>
             <DataTrigger Binding="{Binding HasLyrics}" Value="True">
@@ -60,9 +52,6 @@
                 <Setter TargetName="title" Property="FontWeight" Value="SemiBold" />
                 <Setter TargetName="idx" Property="Foreground" Value="{DynamicResource Accent}" />
                 <Setter TargetName="idx" Property="FontWeight" Value="Bold" />
-            </DataTrigger>
-            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True">
-                <Setter TargetName="addAction" Property="Opacity" Value="1" />
             </DataTrigger>
         </DataTemplate.Triggers>
     </DataTemplate>

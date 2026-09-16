@@ -12,13 +12,11 @@ namespace LightMusic
     public class SettingsView : UserControl
     {
         private readonly MainWindow main;
-        private readonly TextBlock dirText = Ui.Text("", 12.5, "TextDim");
         private readonly TextBlock hiddenText = Ui.Text("", 12, "TextMuted");
         private readonly Slider fontSizeSlider = new Slider();
         private readonly Slider opacitySlider = new Slider();
         private readonly TextBlock fontSizeLabel = Ui.Text("", 12, "TextMuted");
         private readonly TextBlock opacityLabel = Ui.Text("", 12, "TextMuted");
-        private readonly CheckBox recursiveCheck = new CheckBox();
         private readonly CheckBox resumeCheck = new CheckBox();
         private readonly CheckBox autoPlayCheck = new CheckBox();
         private readonly CheckBox mediaKeysCheck = new CheckBox();
@@ -26,6 +24,10 @@ namespace LightMusic
         private readonly CheckBox lockCheck = new CheckBox();
         private readonly CheckBox closeTrayCheck = new CheckBox();
         private readonly CheckBox minimizeTrayCheck = new CheckBox();
+        private readonly TextBox cloudUrlBox = new TextBox();
+        private readonly TextBlock cloudStatus = Ui.Text("", 11.5, "TextMuted");
+        private readonly TextBlock cacheInfo = Ui.Text("", 11.5, "TextMuted");
+        private readonly CheckBox cloudCacheCheck = new CheckBox();
         private readonly StackPanel colorRow = new StackPanel();
         private readonly Dictionary<string, Border> colorSwatches = new Dictionary<string, Border>();
         private RadioButton darkTheme;
@@ -52,7 +54,7 @@ namespace LightMusic
             title.Margin = new Thickness(2, 0, 0, 14);
             page.Children.Add(title);
 
-            // 布局：音乐库整行，中间两列，关于整行
+            // 布局：云端音乐库整行，中间两列，关于整行
             Grid columns = new Grid();
             columns.ColumnDefinitions.Add(new ColumnDefinition());
             columns.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
@@ -63,7 +65,7 @@ namespace LightMusic
             for (int i = 0; i < 4; i++) columns.RowDefinitions.Add(new RowDefinition());
             for (int i = 0; i < 4; i++) columns.RowDefinitions[i].Height = GridLength.Auto;
 
-            Put(columns, BuildLibraryCard(), 0, 0, 3);
+            Put(columns, BuildCloudCard(), 0, 0, 3);
             Put(columns, BuildPlayCard(), 0, 1, 1);
             Put(columns, BuildLyricCard(), 2, 1, 1);
             Put(columns, BuildAppearanceCard(), 0, 2, 1);
@@ -172,32 +174,73 @@ namespace LightMusic
             return row;
         }
 
-        private UIElement BuildLibraryCard()
+        private UIElement BuildCloudCard()
         {
-            TextBlock path = dirText;
-            path.TextWrapping = TextWrapping.Wrap;
-            StackPanel actions = new StackPanel();
-            actions.Orientation = Orientation.Horizontal;
-            Button change = Ui.Button("更改目录", "OutlineButton", delegate { main.ChooseMusicDir(); });
-            Button open = Ui.Button("打开目录", "OutlineButton", delegate { main.OpenMusicFolder(); });
-            Button rescan = Ui.Button("重新扫描", "OutlineButton", delegate { main.Rescan(); });
-            actions.Children.Add(change);
-            open.Margin = new Thickness(8, 0, 0, 0);
-            actions.Children.Add(open);
-            rescan.Margin = new Thickness(8, 0, 0, 0);
-            actions.Children.Add(rescan);
+            cloudUrlBox.Style = (Style)Application.Current.Resources["InputBox"];
+            cloudUrlBox.FontSize = 12.5;
+            cloudUrlBox.TextChanged += delegate { main.SetCloudUrl(cloudUrlBox.Text); };
 
-            StackPanel pathRow = Ui.Column(8, path, actions);
-
-            recursiveCheck.Style = (Style)Application.Current.Resources["ModernCheckBox"];
-            recursiveCheck.Content = "包含子文件夹";
-            recursiveCheck.Margin = new Thickness(0, 4, 0, 0);
-            recursiveCheck.Click += delegate
+            Button test = Ui.Button("测试连接", "OutlineButton", delegate
             {
-                main.Settings.Recursive = recursiveCheck.IsChecked == true;
+                cloudStatus.Text = "正在测试…";
+                main.TestCloudConnection(cloudUrlBox.Text, delegate(bool ok, string message)
+                {
+                    cloudStatus.Text = message;
+                });
+            });
+            Button browse = Ui.Button("打开云盘", "OutlineButton", delegate
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(CloudClient.ShareUrl(cloudUrlBox.Text));
+                }
+                catch (Exception)
+                {
+                }
+            });
+            Button refresh = Ui.Button("刷新列表", "OutlineButton", delegate { main.Rescan(); });
+
+            Grid urlRow = new Grid();
+            urlRow.ColumnDefinitions.Add(new ColumnDefinition());
+            urlRow.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            urlRow.ColumnDefinitions.Add(new ColumnDefinition());
+            urlRow.ColumnDefinitions[1].Width = GridLength.Auto;
+            urlRow.Children.Add(cloudUrlBox);
+            StackPanel buttons = Ui.Row(8, test, browse, refresh);
+            buttons.Margin = new Thickness(10, 0, 0, 0);
+            buttons.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(buttons, 1);
+            urlRow.Children.Add(buttons);
+
+            cloudStatus.Margin = new Thickness(0, 6, 0, 0);
+            cloudStatus.TextWrapping = TextWrapping.Wrap;
+
+            cloudCacheCheck.Style = (Style)Application.Current.Resources["ModernCheckBox"];
+            cloudCacheCheck.Content = "播放时缓存到本地（缓存后可离线重听、即点即播）";
+            cloudCacheCheck.Click += delegate
+            {
+                main.Settings.CloudCacheEnabled = cloudCacheCheck.IsChecked == true;
                 main.SaveSettings();
-                main.Rescan();
+                if (!main.Settings.CloudCacheEnabled)
+                {
+                    main.ClearCloudCache();
+                    cacheInfo.Text = "缓存占用：0 MB";
+                }
             };
+            Button clearCache = Ui.Button("清理缓存", "OutlineButton", delegate
+            {
+                main.ClearCloudCache();
+                cacheInfo.Text = CacheText();
+            });
+            StackPanel cacheRow = Ui.Row(12, cloudCacheCheck, cacheInfo, clearCache);
+
+            TextBlock hint = Ui.Text(
+                "把云盘的分享链接（形如 https://cloud.tsinghua.edu.cn/d/xxxxxxxxxxxx/）粘贴到上面，"
+                + "保存后点「刷新列表」即可看到云端的歌：播放时会自动下载到本地缓存，"
+                + "下次播放同一首就是本地播放；也会自动预取队列里的下一首。",
+                11.5, "TextMuted");
+            hint.TextWrapping = TextWrapping.Wrap;
+            hint.LineHeight = 20;
 
             Button restore = Ui.Button("恢复全部", "OutlineButton", delegate
             {
@@ -206,12 +249,22 @@ namespace LightMusic
                 main.Rescan();
                 main.ShowToast("已恢复被移除的歌曲");
             });
-            StackPanel hiddenRow = Ui.Row(10, hiddenText, restore);
+            StackPanel hiddenRow = Ui.Row(12, hiddenText, restore);
 
-            return Card("音乐库",
-                Row("音乐目录", "歌词 .lrc 与歌曲放在同一目录", pathRow),
-                recursiveCheck,
-                hiddenRow);
+            return Card("云端音乐（清华云盘 / Seafile 分享链接）",
+                Row("分享链接", "", urlRow),
+                cloudStatus,
+                cacheRow,
+                hiddenRow,
+                hint);
+        }
+
+        private static string CacheText()
+        {
+            long bytes = CloudCache.TotalSize();
+            double mb = bytes / 1024.0 / 1024.0;
+            return "缓存占用：" + (mb >= 1024 ? (mb / 1024).ToString("0.0") + " GB" : mb.ToString("0.0") + " MB")
+                 + "（" + CloudCache.Count() + " 个文件）";
         }
 
         private UIElement BuildPlayCard()
@@ -437,9 +490,7 @@ namespace LightMusic
         public void Refresh()
         {
             AppSettings s = main.Settings;
-            dirText.Text = string.IsNullOrEmpty(s.MusicDir) ? "（未设置）" : s.MusicDir;
-            hiddenText.Text = "已从音乐库移除 " + s.Hidden.Count + " 首歌曲";
-            recursiveCheck.IsChecked = s.Recursive;
+            hiddenText.Text = "已隐藏 " + s.Hidden.Count + " 首歌曲";
             resumeCheck.IsChecked = s.ResumeLast;
             autoPlayCheck.IsChecked = s.AutoPlayOnStart;
             mediaKeysCheck.IsChecked = s.MediaKeys;
@@ -447,6 +498,10 @@ namespace LightMusic
             lockCheck.IsChecked = s.LyricLocked;
             closeTrayCheck.IsChecked = s.CloseToTray;
             minimizeTrayCheck.IsChecked = s.MinimizeToTray;
+            if (cloudUrlBox.Text != (s.CloudUrl == null ? string.Empty : s.CloudUrl))
+                cloudUrlBox.Text = s.CloudUrl == null ? string.Empty : s.CloudUrl;
+            cloudCacheCheck.IsChecked = s.CloudCacheEnabled;
+            cacheInfo.Text = CacheText();
             fontSizeSlider.Value = s.LyricFontSize;
             fontSizeLabel.Text = ((int)s.LyricFontSize) + " px";
             opacitySlider.Value = s.LyricOpacity * 100;

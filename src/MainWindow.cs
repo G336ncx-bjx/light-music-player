@@ -21,7 +21,7 @@ namespace LightMusic
     public partial class MainWindow : Window
     {
         public const string AppName = "轻音乐";
-        public const string AppVersion = "1.1.0";
+        public const string AppVersion = "1.2.0";
 
         private readonly AppSettings settings;
         private readonly PlayerEngine engine = new PlayerEngine();
@@ -54,6 +54,7 @@ namespace LightMusic
         private TextBlock positionText;
         private TextBlock durationText;
         private Slider progressSlider;
+        private ProgressBar bufferingBar;
         private Slider volumeSlider;
         private Button playButton;
         private Button modeButton;
@@ -105,8 +106,6 @@ namespace LightMusic
             Closed += OnClosed;
             StateChanged += OnStateChanged;
             PreviewKeyDown += OnPreviewKeyDown;
-            AllowDrop = true;
-            Drop += OnDrop;
         }
 
         #region 公开接口（供各视图调用）
@@ -145,30 +144,51 @@ namespace LightMusic
             PlayCurrent(true);
         }
 
+        /// <summary>
+        /// 点歌名：直接播放这一首，并把它加入播放列表（已经在列表里就只播放，不重复添加）。
+        /// </summary>
         public void PlaySong(Song song)
         {
+            if (song == null) return;
             int idx = queue.IndexOf(song);
             if (idx < 0)
             {
-                foreach (Song s in visible)
-                {
-                    if (s == song) { idx = visible.IndexOf(song); break; }
-                }
+                queue.Add(song);
+                idx = queue.Count - 1;
+                Raise(QueueChanged);
+                UpdateQueueState();
             }
-            if (queue.Contains(song))
-            {
-                queueIndex = queue.IndexOf(song);
-                PlayCurrent(true);
-                return;
-            }
-            List<Song> ctx = visible.Count > 0 ? visible : library;
-            int i = ctx.IndexOf(song);
-            PlayFrom(ctx, i < 0 ? 0 : i);
+            queueIndex = idx;
+            PlayCurrent(true);
         }
 
         public void Enqueue(Song song, bool playNext)
         {
             if (song == null) return;
+
+            int existing = queue.IndexOf(song);
+            if (existing >= 0)
+            {
+                if (playNext)
+                {
+                    Song moved = queue[existing];
+                    queue.RemoveAt(existing);
+                    if (existing < queueIndex) queueIndex--;
+                    int at = queueIndex + 1;
+                    if (at > queue.Count) at = queue.Count;
+                    if (at < 0) at = 0;
+                    queue.Insert(at, moved);
+                    Raise(QueueChanged);
+                    UpdateQueueState();
+                    ShowToast("已把「" + song.Title + "」调整到下一首");
+                }
+                else
+                {
+                    ShowToast("播放列表里已经有「" + song.Title + "」了");
+                }
+                return;
+            }
+
             if (queue.Count == 0)
             {
                 queue.Add(song);
@@ -426,6 +446,7 @@ namespace LightMusic
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
             settings.MusicDir = dir;
+            settings.Source = "local";
             SaveSettings();
             Raise(SettingsChanged);
             Rescan();
@@ -434,6 +455,17 @@ namespace LightMusic
         public void Rescan()
         {
             if (scanning) return;
+            if (settings.Source == "cloud")
+            {
+                if (string.IsNullOrEmpty(settings.CloudUrl))
+                {
+                    ShowToast("请先在设置里填写云盘分享链接");
+                    return;
+                }
+                scanning = true;
+                RescanCloud();
+                return;
+            }
             scanning = true;
             string dir = settings.MusicDir;
             bool recursive = settings.Recursive;
@@ -448,6 +480,62 @@ namespace LightMusic
                 Dispatcher.BeginInvoke((Action)delegate
                 {
                     ApplyScan(result);
+                });
+            });
+        }
+
+        public bool IsCloudSource
+        {
+            get { return settings.Source == "cloud" && !string.IsNullOrEmpty(settings.CloudUrl); }
+        }
+
+        private void RescanCloud()
+        {
+            string url = settings.CloudUrl;
+            List<DurationEntry> cache = settings.Durations;
+            List<string> hidden = settings.Hidden;
+            ShowToast("正在读取云盘文件列表…");
+            if (statusText != null) statusText.Text = "正在读取云盘…";
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    ScanResult result = CloudLibrary.Scan(url, cache, hidden);
+                    Dispatcher.BeginInvoke((Action)delegate { ApplyScan(result); });
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.BeginInvoke((Action)delegate
+                    {
+                        scanning = false;
+                        ShowToast("无法读取云盘：" + ex.Message);
+                        if (statusText != null) statusText.Text = "云盘读取失败";
+                    });
+                }
+            });
+        }
+
+        /// <summary>后台补齐云盘歌曲的歌词与时长。</summary>
+        private void FillCloudDetails()
+        {
+            if (!IsCloudSource || library.Count == 0) return;
+            string url = settings.CloudUrl;
+            List<Song> songs = new List<Song>(library);
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                CloudLibrary.FillDetails(url, songs, delegate(Song song)
+                {
+                    Dispatcher.BeginInvoke((Action)delegate
+                    {
+                        if (song == currentSong && lyricsView != null) lyricsView.Load(song);
+                        if (song == currentSong && desktopLyrics != null) desktopLyrics.UpdateNow();
+                    });
+                }, 0);
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    SaveSettings();
+                    UpdateStatusText();
                 });
             });
         }
@@ -922,7 +1010,22 @@ namespace LightMusic
             Grid.SetColumn(right, 2);
             grid.Children.Add(right);
 
-            bar.Child = grid;
+            // 云端缓冲进度条：贴在播放条底部，出现时不改变布局
+            Grid barHost = new Grid();
+            barHost.Children.Add(grid);
+            bufferingBar = new ProgressBar();
+            bufferingBar.Minimum = 0;
+            bufferingBar.Maximum = 100;
+            bufferingBar.Height = 3;
+            bufferingBar.Visibility = Visibility.Collapsed;
+            bufferingBar.VerticalAlignment = VerticalAlignment.Bottom;
+            bufferingBar.HorizontalAlignment = HorizontalAlignment.Stretch;
+            bufferingBar.BorderThickness = new Thickness(0);
+            Ui.Bind(bufferingBar, ProgressBar.BackgroundProperty, "Panel");
+            Ui.Bind(bufferingBar, ProgressBar.ForegroundProperty, "Accent");
+            barHost.Children.Add(bufferingBar);
+
+            bar.Child = barHost;
             return bar;
         }
 
@@ -980,7 +1083,15 @@ namespace LightMusic
         {
             ApplyDarkTitleBar();
             UpdateSearchPlaceholder();
-            SetMusicDirForFirstRun();
+            if (!IsCloudSource)
+            {
+                SetMusicDirForFirstRun();
+            }
+            else if (string.IsNullOrEmpty(settings.CloudUrl))
+            {
+                ShowView("settings");
+                ShowToast("请先粘贴云盘分享链接，再点「刷新列表」");
+            }
             Rescan();
             timer = new DispatcherTimer();
             timer.Interval = TimeSpan.FromMilliseconds(80);
@@ -1048,8 +1159,7 @@ namespace LightMusic
 
             double total = 0;
             foreach (Song s in library) total += s.Duration;
-            statusText.Text = string.Format(CultureInfo.InvariantCulture,
-                "共 {0} 首 · 时长 {1}", library.Count, LongDuration(total));
+            UpdateStatusText();
             SettingsChangedSafe();
 
             // 恢复队列中已失效的歌曲
@@ -1059,6 +1169,86 @@ namespace LightMusic
                 ? "没有找到音乐文件，请检查音乐目录"
                 : string.Format(CultureInfo.InvariantCulture, "已载入 {0} 首歌曲", library.Count));
             UpdateQueueState();
+            FillCloudDetails();
+        }
+
+        public void UpdateStatusText()
+        {
+            if (statusText == null) return;
+            double total = 0;
+            foreach (Song s in library) total += s.Duration;
+            if (IsCloudSource)
+            {
+                int cached = 0;
+                foreach (Song s in library)
+                {
+                    if (CloudCache.CachedPath(s) != null) cached++;
+                }
+                statusText.Text = string.Format(CultureInfo.InvariantCulture,
+                    "云盘 · {0} 首 · 已缓存 {1} 首 · {2}", library.Count, cached, LongDuration(total));
+            }
+            else
+            {
+                statusText.Text = string.Format(CultureInfo.InvariantCulture,
+                    "共 {0} 首 · 时长 {1}", library.Count, LongDuration(total));
+            }
+            if (dirLabel != null)
+            {
+                dirLabel.Text = IsCloudSource ? "云盘：" + settings.CloudUrl : settings.MusicDir;
+            }
+        }
+
+        /// <summary>切换音乐来源：local / cloud。</summary>
+        public void SetSource(string source)
+        {
+            settings.Source = source == "cloud" ? "cloud" : "local";
+            SaveSettings();
+            Raise(SettingsChanged);
+            Rescan();
+        }
+
+        public void SetCloudUrl(string url)
+        {
+            settings.CloudUrl = url == null ? string.Empty : url.Trim();
+            SaveSettings();
+        }
+
+        /// <summary>测试云盘链接是否可用（后台执行，回调在 UI 线程）。</summary>
+        public void TestCloudConnection(string url, Action<bool, string> done)
+        {
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                bool ok = false;
+                string message;
+                try
+                {
+                    List<CloudEntry> entries = CloudClient.ListAllFiles(url, 1);
+                    int songs = 0;
+                    foreach (CloudEntry entry in entries)
+                    {
+                        if (Array.IndexOf(LibraryScanner.Extensions,
+                            Path.GetExtension(entry.Name).ToLowerInvariant()) >= 0) songs++;
+                    }
+                    ok = true;
+                    message = "连接成功：发现 " + songs + " 首歌曲";
+                }
+                catch (Exception ex)
+                {
+                    message = "连接失败：" + ex.Message;
+                }
+                if (done != null)
+                {
+                    Dispatcher.BeginInvoke((Action)delegate { done(ok, message); });
+                }
+            });
+        }
+
+        public void ClearCloudCache()
+        {
+            CloudCache.Clear();
+            UpdateStatusText();
+            Raise(SettingsChanged);
+            ShowToast("已清理云端缓存");
         }
 
         private string LongDuration(double seconds)
@@ -1115,23 +1305,138 @@ namespace LightMusic
         private void OpenTrack(Song song, bool autoPlay, double startAt)
         {
             if (song == null) return;
+            ReleaseOldCloudCache();
             currentSong = song;
             UpdateCurrentFlags();
             if (lyricsView != null) lyricsView.Load(song);
-            try
-            {
-                engine.Open(song, autoPlay, startAt);
-            }
-            catch (Exception ex)
-            {
-                ShowToast("无法播放：" + ex.Message);
-            }
             if (titleText != null) titleText.Text = song.Title;
             if (artistText != null) artistText.Text = song.ArtistText + (song.HasLyrics ? " · 有歌词" : "");
             Title = song.Title + " - " + AppName;
             Raise(SongChanged);
             if (desktopLyrics != null) desktopLyrics.UpdateNow();
             UpdateProgress(true);
+
+            string localPath = song.Path;
+            if (song.IsCloud)
+            {
+                string cached = CloudCache.CachedPath(song);
+                if (cached == null)
+                {
+                    StartCloudBuffering(song, autoPlay, startAt);
+                    return;
+                }
+                localPath = cached;
+            }
+
+            try
+            {
+                engine.Open(song, localPath, autoPlay, startAt);
+            }
+            catch (Exception ex)
+            {
+                ShowToast("无法播放：" + ex.Message);
+            }
+            PrefetchNext();
+        }
+
+        /// <summary>云盘歌曲：先下载到本地缓存再播放，并显示进度。</summary>
+        private void StartCloudBuffering(Song song, bool autoPlay, double startAt)
+        {
+            string url = settings.CloudUrl;
+            string target = CloudCache.FileFor(song);
+            if (artistText != null) artistText.Text = "正在缓冲… 0%";
+            ShowToast("正在缓冲云端歌曲：" + song.Title);
+            if (bufferingBar != null)
+            {
+                bufferingBar.Visibility = Visibility.Visible;
+                bufferingBar.Value = 0;
+            }
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    CloudClient.DownloadTo(url, song.CloudPath, target, delegate(long done, long total)
+                    {
+                        int percent = total > 0 ? (int)(done * 100 / total) : 0;
+                        Dispatcher.BeginInvoke((Action)delegate
+                        {
+                            if (currentSong != song) return;
+                            if (artistText != null) artistText.Text = "正在缓冲… " + percent + "%";
+                            if (bufferingBar != null) bufferingBar.Value = percent;
+                        });
+                    });
+
+                    Dispatcher.BeginInvoke((Action)delegate
+                    {
+                        if (bufferingBar != null) bufferingBar.Visibility = Visibility.Collapsed;
+                        if (currentSong != song) return;
+                        try
+                        {
+                            engine.Open(song, target, autoPlay, startAt);
+                        }
+                        catch (Exception ex)
+                        {
+                            ShowToast("无法播放：" + ex.Message);
+                        }
+                        if (artistText != null)
+                            artistText.Text = song.ArtistText + (song.HasLyrics ? " · 有歌词" : "");
+                        UpdateStatusText();
+                        PrefetchNext();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.BeginInvoke((Action)delegate
+                    {
+                        if (bufferingBar != null) bufferingBar.Visibility = Visibility.Collapsed;
+                        ShowToast("云端缓冲失败：" + ex.Message);
+                        if (artistText != null) artistText.Text = song.ArtistText;
+                    });
+                }
+            });
+        }
+
+        /// <summary>提前把队列里的下一首云端歌曲下载好。</summary>
+        private void PrefetchNext()
+        {
+            if (!IsCloudSource || queue.Count == 0) return;
+            int next = queueIndex + 1;
+            if (next >= queue.Count) next = settings.Mode == PlayMode.ListLoop ? 0 : -1;
+            if (next < 0 || next >= queue.Count) return;
+            Song song = queue[next];
+            if (song == null || !song.IsCloud || song == currentSong) return;
+            if (CloudCache.CachedPath(song) != null) return;
+
+            string url = settings.CloudUrl;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    CloudClient.DownloadTo(url, song.CloudPath, CloudCache.FileFor(song), null);
+                    Dispatcher.BeginInvoke((Action)delegate { UpdateStatusText(); });
+                }
+                catch (Exception)
+                {
+                }
+            });
+        }
+
+        /// <summary>关闭「保留缓存」时，切歌后删除上一首的缓存文件。</summary>
+        private void ReleaseOldCloudCache()
+        {
+            if (settings.CloudCacheEnabled) return;
+            Song previous = currentSong;
+            if (previous == null || !previous.IsCloud) return;
+            string path = CloudCache.FileFor(previous);
+            try
+            {
+                engine.Close();
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private void UpdateCurrentFlags()
@@ -1330,6 +1635,17 @@ namespace LightMusic
 
         private void OpenMusicDir()
         {
+            if (IsCloudSource)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(CloudClient.ShareUrl(settings.CloudUrl));
+                }
+                catch (Exception)
+                {
+                }
+                return;
+            }
             if (string.IsNullOrEmpty(settings.MusicDir) || !Directory.Exists(settings.MusicDir))
             {
                 ChooseMusicDir();
@@ -1440,6 +1756,7 @@ namespace LightMusic
 
         private void OnClosing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            TraceStep("closing");
             if (!reallyExit && settings.CloseToTray)
             {
                 e.Cancel = true;
@@ -1447,8 +1764,11 @@ namespace LightMusic
                 return;
             }
             reallyExit = true;
-            UnregisterMediaKeys();
+            // 退出时不必手动注销热键：进程结束系统会自动释放，
+            // 在窗口关闭过程中调用 UnregisterHotKey 反而可能卡住消息循环。
+            TraceStep("hotkeys skipped");
             SaveStateBeforeExit();
+            TraceStep("state saved");
         }
 
         private void SaveStateBeforeExit()
@@ -1482,16 +1802,41 @@ namespace LightMusic
 
         private void OnClosed(object sender, EventArgs e)
         {
+            TraceStep("closed: stop timer");
             if (timer != null) timer.Stop();
+            TraceStep("closed: engine");
             engine.Close();
+            TraceStep("closed: tray");
             if (tray != null)
             {
                 tray.Visible = false;
                 tray.Dispose();
                 tray = null;
             }
+            TraceStep("closed: lyrics");
             if (desktopLyrics != null) desktopLyrics.Close();
+            TraceStep("closed: shutdown");
             Application.Current.Shutdown();
+            TraceStep("closed: done");
+        }
+
+        /// <summary>仅在自检 / 冒烟模式下写步骤日志，方便定位卡死。</summary>
+        internal static void TraceStep(string step)
+        {
+            if (!Headless) return;
+            try
+            {
+                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lightmusic-smoke.log");
+                using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Append,
+                    System.IO.FileAccess.Write, System.IO.FileShare.ReadWrite))
+                using (System.IO.StreamWriter writer = new System.IO.StreamWriter(fs, System.Text.Encoding.UTF8))
+                {
+                    writer.WriteLine(DateTime.Now.ToString("HH:mm:ss.fff") + "  [win] " + step);
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private void HideToTray()
@@ -1597,18 +1942,6 @@ namespace LightMusic
                     engine.IsMuted = !engine.IsMuted;
                     SettingsChangedSafe();
                     break;
-            }
-        }
-
-        private void OnDrop(object sender, DragEventArgs e)
-        {
-            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-            string[] paths = (string[])e.Data.GetData(DataFormats.FileDrop);
-            if (paths == null || paths.Length == 0) return;
-            if (Directory.Exists(paths[0]))
-            {
-                SetMusicDir(paths[0]);
-                ShowToast("音乐目录已切换：" + paths[0]);
             }
         }
 
@@ -1752,5 +2085,6 @@ namespace LightMusic
         }
     }
 }
+
 
 
