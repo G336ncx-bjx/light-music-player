@@ -7,10 +7,16 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using System.Windows.Threading;
 
 namespace LightMusic
 {
-    /// <summary>桌面歌词浮窗：无边框、可拖动、可锁定（鼠标穿透）、置顶。</summary>
+    /// <summary>
+    /// 桌面歌词浮窗。
+    /// 状态：
+    ///   锁定     —— 完全透明（无背景、无阴影），鼠标穿透，仅鼠标移到窗口上时浮出小工具栏；
+    ///   未锁定   —— 鼠标不在上面时透明，移到上面时出现浅色底与阴影，可拖动，并显示工具栏。
+    /// </summary>
     public class DesktopLyricsWindow : Window
     {
         private readonly MainWindow main;
@@ -18,9 +24,19 @@ namespace LightMusic
         private readonly TextBlock currentText = new TextBlock();
         private readonly TextBlock translationText = new TextBlock();
         private readonly TextBlock nextText = new TextBlock();
+        private readonly Border toolbar = new Border();
         private readonly TextBlock hintText = new TextBlock();
+        private readonly Button lockButton = new Button();
         private readonly StackPanel panel = new StackPanel();
+
         private bool locked;
+        private bool clickThrough;
+        private bool hovering;
+        private bool overToolbar;
+        private bool toolbarShown;
+        private DateTime hoverStarted = DateTime.MinValue;
+        private DispatcherTimer pollTimer;
+        private DispatcherTimer hintTimer;
 
         public DesktopLyricsWindow(MainWindow owner)
         {
@@ -34,66 +50,55 @@ namespace LightMusic
             ResizeMode = ResizeMode.NoResize;
             ShowActivated = false;
             WindowStartupLocation = WindowStartupLocation.Manual;
-            Width = 920;
             SizeToContent = SizeToContent.Height;
             MinHeight = 96;
             FontFamily = Ui.Font;
 
+            // 宽度只在这里决定一次，之后不再变化，避免开关/锁定时画面跳变
+            Rect area = SystemParameters.WorkArea;
+            Width = Math.Min(1080, Math.Max(620, area.Width * 0.68));
+
             frame.CornerRadius = new CornerRadius(16);
-            frame.Padding = new Thickness(28, 14, 28, 16);
+            frame.Padding = new Thickness(30, 14, 30, 16);
             frame.Margin = new Thickness(26);
-            frame.Background = new SolidColorBrush(Color.FromArgb(150, 10, 12, 16));
-            frame.Effect = new DropShadowEffect
-            {
-                BlurRadius = 26,
-                ShadowDepth = 4,
-                Opacity = 0.45,
-                Color = Colors.Black
-            };
+            frame.Background = Brushes.Transparent;
 
-            currentText.FontSize = 34;
-            currentText.FontWeight = FontWeights.SemiBold;
-            currentText.TextAlignment = TextAlignment.Center;
-            currentText.TextWrapping = TextWrapping.Wrap;
-            currentText.Foreground = Brushes.White;
-
-            translationText.FontSize = 18;
-            translationText.TextAlignment = TextAlignment.Center;
-            translationText.TextWrapping = TextWrapping.Wrap;
+            Configure(currentText, 34, FontWeights.SemiBold);
+            Configure(translationText, 18, FontWeights.Normal);
+            Configure(nextText, 19, FontWeights.Normal);
             translationText.Margin = new Thickness(0, 2, 0, 0);
-            translationText.Opacity = 0.85;
-            translationText.Foreground = Brushes.White;
-
-            nextText.FontSize = 19;
-            nextText.TextAlignment = TextAlignment.Center;
-            nextText.TextWrapping = TextWrapping.Wrap;
-            nextText.Margin = new Thickness(0, 6, 0, 0);
-            nextText.Opacity = 0.6;
-            nextText.Foreground = Brushes.White;
-
-            hintText.FontSize = 11.5;
-            hintText.TextAlignment = TextAlignment.Center;
-            hintText.Margin = new Thickness(0, 6, 0, 0);
-            hintText.Opacity = 0.45;
-            hintText.Foreground = Brushes.White;
-            hintText.Text = DefaultHint;
+            nextText.Margin = new Thickness(0, 8, 0, 0);
 
             panel.Children.Add(currentText);
             panel.Children.Add(translationText);
             panel.Children.Add(nextText);
-            panel.Children.Add(hintText);
-            frame.Child = panel;
+
+            // 顶部固定高度的工具栏行 + 居中歌词 + 底部等高空行，
+            // 这样工具栏淡入淡出不会改变窗口大小，歌词也始终垂直居中。
+            panel.Margin = new Thickness(0, 0, 0, 0);
+            Grid content = new Grid();
+            content.RowDefinitions.Add(new RowDefinition());
+            content.RowDefinitions[0].Height = Ui.Px(ToolbarHeight);
+            content.RowDefinitions.Add(new RowDefinition());
+            content.RowDefinitions[1].Height = new GridLength(1, GridUnitType.Star);
+            content.RowDefinitions.Add(new RowDefinition());
+            content.RowDefinitions[2].Height = Ui.Px(ToolbarHeight);
+
+            Border toolbarRow = new Border();
+            toolbarRow.Child = BuildToolbar();
+            content.Children.Add(toolbarRow);
+            Grid.SetRow(panel, 1);
+            content.Children.Add(panel);
+            frame.Child = content;
             Content = frame;
 
             MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e)
             {
                 if (locked) return;
+                if (overToolbar) return;
                 if (e.ButtonState == MouseButtonState.Pressed) DragMove();
             };
-            MouseRightButtonUp += delegate { ShowMenu(); };
-            MouseEnter += delegate { hintText.Visibility = Visibility.Visible; };
-            MouseLeave += delegate { hintText.Visibility = Visibility.Collapsed; };
-            hintText.Visibility = Visibility.Collapsed;
+            MouseRightButtonUp += delegate { if (!locked) ShowMenu(); };
 
             SourceInitialized += delegate { ApplyClickThrough(); };
             Loaded += delegate
@@ -101,8 +106,87 @@ namespace LightMusic
                 PlaceWindow();
                 ApplySettings();
                 UpdateNow();
+                StartPolling();
+            };
+            Closed += delegate
+            {
+                if (pollTimer != null) pollTimer.Stop();
+                if (hintTimer != null) hintTimer.Stop();
             };
         }
+
+        private static void Configure(TextBlock block, double size, FontWeight weight)
+        {
+            block.FontSize = size;
+            block.FontWeight = weight;
+            block.TextAlignment = TextAlignment.Center;
+            block.TextWrapping = TextWrapping.Wrap;
+            block.Foreground = Brushes.White;
+            block.Effect = new DropShadowEffect
+            {
+                BlurRadius = 9,
+                ShadowDepth = 0,
+                Opacity = 0.85,
+                Color = Colors.Black
+            };
+        }
+
+        #region 工具栏
+
+        private const double ToolbarHeight = 30;
+
+        private UIElement BuildToolbar()
+        {
+            lockButton.Style = (Style)Application.Current.Resources["TinyIconButton"];
+            lockButton.Content = Icons.Create("lock", 15, "TextDim");
+            lockButton.ToolTip = "锁定 / 解锁（锁定后鼠标穿透）Ctrl+Alt+L";
+            lockButton.Click += delegate { main.ToggleLyricLock(); };
+
+            Button smaller = ToolButton("minimize", "减小字号", delegate { ChangeFont(-3); });
+            Button bigger = ToolButton("plus", "增大字号", delegate { ChangeFont(3); });
+            Button home = ToolButton("monitor", "回到主界面", delegate { main.ShowFromTrayPublic(); });
+            Button close = ToolButton("close", "关闭桌面歌词", delegate { main.ShowDesktopLyrics(false); });
+
+            hintText.FontSize = 11.5;
+            hintText.VerticalAlignment = VerticalAlignment.Center;
+            hintText.Margin = new Thickness(0, 0, 10, 0);
+            hintText.Visibility = Visibility.Collapsed;
+            hintText.SetResourceReference(TextBlock.ForegroundProperty, "TextDim");
+
+            StackPanel row = new StackPanel();
+            row.Orientation = Orientation.Horizontal;
+            row.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(hintText);
+            row.Children.Add(lockButton);
+            row.Children.Add(smaller);
+            row.Children.Add(bigger);
+            row.Children.Add(home);
+            row.Children.Add(close);
+
+            toolbar.Background = new SolidColorBrush(Color.FromArgb(200, 18, 21, 28));
+            toolbar.CornerRadius = new CornerRadius(10);
+            toolbar.Padding = new Thickness(8, 2, 8, 2);
+            toolbar.Height = ToolbarHeight;
+            toolbar.HorizontalAlignment = HorizontalAlignment.Right;
+            toolbar.VerticalAlignment = VerticalAlignment.Center;
+            toolbar.Margin = new Thickness(0, 0, 44, 0);
+            toolbar.Child = row;
+            toolbar.Opacity = 0;
+            toolbar.IsHitTestVisible = false;
+            return toolbar;
+        }
+
+        private static Button ToolButton(string icon, string tooltip, RoutedEventHandler click)
+        {
+            Button button = new Button();
+            button.Style = (Style)Application.Current.Resources["TinyIconButton"];
+            button.Content = Icons.Create(icon, 15, "TextDim");
+            button.ToolTip = tooltip;
+            button.Click += click;
+            return button;
+        }
+
+        #endregion
 
         /// <summary>应用设置中的字号、颜色、透明度与锁定状态。</summary>
         public void ApplySettings()
@@ -111,6 +195,7 @@ namespace LightMusic
             currentText.FontSize = s.LyricFontSize;
             translationText.FontSize = Math.Max(12, s.LyricFontSize * 0.55);
             nextText.FontSize = Math.Max(12, s.LyricFontSize * 0.6);
+
             Color color;
             try
             {
@@ -125,17 +210,20 @@ namespace LightMusic
             currentText.Foreground = brush;
             translationText.Foreground = brush;
             nextText.Foreground = brush;
-            Opacity = Math.Max(0.2, Math.Min(1, s.LyricOpacity));
-            translationText.Visibility = s.LyricShowTranslation && translationText.Text.Length > 0
-                ? Visibility.Visible : Visibility.Collapsed;
-            bool wantLock = s.LyricLocked;
-            if (wantLock != locked)
-            {
-                locked = wantLock;
-                ApplyClickThrough();
-            }
-            frame.Cursor = locked ? Cursors.Arrow : Cursors.SizeAll;
-            Width = Math.Min(1200, Math.Max(560, SystemParameters.WorkArea.Width * 0.72));
+            // 只让歌词文字半透明，工具栏始终清晰可见
+            panel.Opacity = Math.Max(0.2, Math.Min(1, s.LyricOpacity));
+
+            locked = s.LyricLocked;
+            UpdateLockVisual();
+            ApplyVisualState();
+        }
+
+        private void UpdateLockVisual()
+        {
+            lockButton.Content = Icons.Create(locked ? "lock" : "unlock", 15, "TextDim");
+            lockButton.ToolTip = locked
+                ? "已锁定：鼠标穿透，点此解锁（Ctrl+Alt+L）"
+                : "锁定：锁定后鼠标穿透，完全不影响操作电脑";
         }
 
         /// <summary>刷新歌词显示。</summary>
@@ -159,14 +247,14 @@ namespace LightMusic
             {
                 currentText.Text = song.Title;
                 translationText.Text = string.Empty;
-                nextText.Text = "（未找到歌词，放一个同名 .lrc 文件即可）";
                 translationText.Visibility = Visibility.Collapsed;
+                nextText.Text = "（暂无歌词，放一个同名 .lrc 文件即可）";
                 return;
             }
 
             if (index < 0)
             {
-                currentText.Text = "♪ " + song.Title;
+                currentText.Text = song.Title;
                 translationText.Text = string.Empty;
                 translationText.Visibility = Visibility.Collapsed;
                 nextText.Text = lines[0].Text;
@@ -187,28 +275,215 @@ namespace LightMusic
             nextText.Text = index + 1 < lines.Count ? lines[index + 1].Text : string.Empty;
         }
 
-        private const string DefaultHint = "拖动可移动 · 右键可锁定（鼠标穿透）· Ctrl+Alt+L 快速锁定 / 解锁";
-        private System.Windows.Threading.DispatcherTimer hintTimer;
-
-        /// <summary>短暂显示一条提示（例如“已锁定”）。</summary>
+        /// <summary>短暂提示（例如「已锁定」）。</summary>
         public void FlashHint(string message)
         {
             hintText.Text = message;
             hintText.Visibility = Visibility.Visible;
             if (hintTimer == null)
             {
-                hintTimer = new System.Windows.Threading.DispatcherTimer();
-                hintTimer.Interval = TimeSpan.FromMilliseconds(2600);
+                hintTimer = new DispatcherTimer();
+                hintTimer.Interval = TimeSpan.FromMilliseconds(2800);
                 hintTimer.Tick += delegate
                 {
                     hintTimer.Stop();
-                    hintText.Text = DefaultHint;
                     hintText.Visibility = Visibility.Collapsed;
+                    ApplyVisualState();
                 };
             }
             hintTimer.Stop();
             hintTimer.Start();
+            ApplyVisualState();
         }
+
+        /// <summary>仅用于离屏截图：模拟鼠标悬停状态。</summary>
+        public void SimulateHoverForShot()
+        {
+            hovering = true;
+            overToolbar = false;
+            toolbarShown = true;
+            hoverStarted = DateTime.Now;
+            ApplyVisualState();
+        }
+
+        private void ChangeFont(double delta)
+        {
+            double size = main.Settings.LyricFontSize + delta;
+            if (size < 18) size = 18;
+            if (size > 72) size = 72;
+            main.Settings.LyricFontSize = size;
+            main.SaveSettings();
+            ApplySettings();
+            main.NotifySettingsChanged();
+        }
+
+        #region 状态与鼠标穿透
+
+        private void StartPolling()
+        {
+            if (pollTimer != null) return;
+            pollTimer = new DispatcherTimer();
+            pollTimer.Interval = TimeSpan.FromMilliseconds(120);
+            pollTimer.Tick += delegate { PollCursor(); };
+            pollTimer.Start();
+        }
+
+        /// <summary>锁定状态下窗口收不到鼠标事件，因此轮询光标位置来判断悬停。</summary>
+        private void PollCursor()
+        {
+            if (!IsVisible) return;
+            POINT cursor;
+            if (!GetCursorPos(out cursor)) return;
+
+            RECT rect;
+            if (!GetWindowRect(new WindowInteropHelper(this).Handle, out rect)) return;
+            rect.Left += 26;
+            rect.Top += 26;
+            rect.Right -= 26;
+            rect.Bottom -= 26;
+
+            bool inside = cursor.X >= rect.Left && cursor.X <= rect.Right
+                       && cursor.Y >= rect.Top && cursor.Y <= rect.Bottom;
+
+            bool onToolbar = false;
+            if (inside)
+            {
+                double scaleX = 1;
+                double scaleY = 1;
+                PresentationSource source = PresentationSource.FromVisual(this);
+                if (source != null && source.CompositionTarget != null)
+                {
+                    scaleX = source.CompositionTarget.TransformToDevice.M11;
+                    scaleY = source.CompositionTarget.TransformToDevice.M22;
+                }
+                try
+                {
+                    Point origin = toolbar.PointToScreen(new Point(0, 0));
+                    double width = Math.Max(60, toolbar.ActualWidth) * scaleX;
+                    double height = Math.Max(24, toolbar.ActualHeight) * scaleY;
+                    // 四周留一点余量，鼠标稍微偏一点也能点到
+                    onToolbar = cursor.X >= origin.X - 6 && cursor.X <= origin.X + width + 6
+                             && cursor.Y >= origin.Y - 6 && cursor.Y <= origin.Y + height + 6;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            bool wasInside = hovering;
+            hovering = inside;
+            overToolbar = onToolbar;
+            if (inside && !wasInside) hoverStarted = DateTime.Now;
+
+            bool hintVisible = hintText.Visibility == Visibility.Visible;
+            bool wantToolbar = inside && (hintVisible || (DateTime.Now - hoverStarted).TotalMilliseconds > 260);
+            if (inside != wasInside || onToolbar != overToolbar || wantToolbar != toolbarShown)
+            {
+                toolbarShown = wantToolbar;
+                ApplyVisualState();
+            }
+        }
+
+        /// <summary>按锁定 / 悬停状态刷新外观与鼠标穿透。</summary>
+        private void ApplyVisualState()
+        {
+            bool interactive = !locked || overToolbar;
+            SetClickThrough(!interactive);
+
+            bool showToolbar = toolbarShown;
+            toolbar.Opacity = showToolbar ? 1 : 0;
+            toolbar.IsHitTestVisible = interactive && showToolbar;
+
+            bool showBackground = !locked && hovering;
+            if (showBackground)
+            {
+                frame.Background = new SolidColorBrush(Color.FromArgb(150, 12, 14, 18));
+                frame.Effect = new DropShadowEffect
+                {
+                    BlurRadius = 26,
+                    ShadowDepth = 4,
+                    Opacity = 0.5,
+                    Color = Colors.Black
+                };
+            }
+            else
+            {
+                frame.Background = Brushes.Transparent;
+                frame.Effect = null;
+            }
+            Cursor = locked ? Cursors.Arrow : Cursors.SizeAll;
+        }
+
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TRANSPARENT = 0x00000020;
+        private const int WS_EX_TOOLWINDOW = 0x00000080;
+        private const int WS_EX_NOACTIVATE = 0x08000000;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT point);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+            int X, int Y, int cx, int cy, uint uFlags);
+
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOZORDER = 0x0004;
+        private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SWP_FRAMECHANGED = 0x0020;
+
+        private void SetClickThrough(bool through)
+        {
+            if (clickThrough == through) return;
+            clickThrough = through;
+            ApplyClickThrough();
+        }
+
+        private void ApplyClickThrough()
+        {
+            try
+            {
+                IntPtr handle = new WindowInteropHelper(this).Handle;
+                if (handle == IntPtr.Zero) return;
+                int style = GetWindowLong(handle, GWL_EXSTYLE);
+                style |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+                if (clickThrough) style |= WS_EX_TRANSPARENT;
+                else style &= ~WS_EX_TRANSPARENT;
+                SetWindowLong(handle, GWL_EXSTYLE, style);
+                SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        #endregion
 
         private void PlaceWindow()
         {
@@ -219,14 +494,14 @@ namespace LightMusic
                 || left < AppSettings.Unset + 1 || top < AppSettings.Unset + 1)
             {
                 left = area.Left + (area.Width - Width) / 2;
-                top = area.Bottom - 200;
+                top = area.Bottom - 220;
             }
             else
             {
                 if (left < area.Left - Width + 80) left = area.Left;
                 if (left > area.Right - 80) left = area.Right - Width;
                 if (top < area.Top - 10) top = area.Top;
-                if (top > area.Bottom - 40) top = area.Bottom - 120;
+                if (top > area.Bottom - 40) top = area.Bottom - 140;
             }
             Left = left;
             Top = top;
@@ -256,17 +531,6 @@ namespace LightMusic
             menu.IsOpen = true;
         }
 
-        private void ChangeFont(double delta)
-        {
-            double size = main.Settings.LyricFontSize + delta;
-            if (size < 18) size = 18;
-            if (size > 72) size = 72;
-            main.Settings.LyricFontSize = size;
-            main.SaveSettings();
-            ApplySettings();
-            main.NotifySettingsChanged();
-        }
-
         private static MenuItem Item(string text, RoutedEventHandler handler)
         {
             MenuItem item = new MenuItem();
@@ -274,46 +538,5 @@ namespace LightMusic
             item.Click += handler;
             return item;
         }
-
-        private const int GWL_EXSTYLE = -20;
-        private const int WS_EX_TRANSPARENT = 0x00000020;
-        private const int WS_EX_TOOLWINDOW = 0x00000080;
-        private const int WS_EX_NOACTIVATE = 0x08000000;
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-
-        private void ApplyClickThrough()
-        {
-            try
-            {
-                IntPtr handle = new WindowInteropHelper(this).Handle;
-                if (handle == IntPtr.Zero) return;
-                int style = GetWindowLong(handle, GWL_EXSTYLE);
-                style |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
-                if (locked) style |= WS_EX_TRANSPARENT;
-                else style &= ~WS_EX_TRANSPARENT;
-                SetWindowLong(handle, GWL_EXSTYLE, style);
-                // 让扩展样式立即生效
-                SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
-            int X, int Y, int cx, int cy, uint uFlags);
-
-        private const uint SWP_NOSIZE = 0x0001;
-        private const uint SWP_NOMOVE = 0x0002;
-        private const uint SWP_NOZORDER = 0x0004;
-        private const uint SWP_NOACTIVATE = 0x0010;
-        private const uint SWP_FRAMECHANGED = 0x0020;
     }
 }
