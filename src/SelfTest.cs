@@ -97,6 +97,21 @@ namespace LightMusic
 
             LyricDocument plain = LrcParser.Parse("第一行\n第二行\n");
             Check("歌词：纯文本歌词", !plain.Synced && plain.Lines.Count == 2, plain.Lines.Count + " 行");
+
+            // 用真实的音乐目录做一次批量解析
+            string dir = "D:\\Lai Siyu\\music";
+            if (!Directory.Exists(dir)) return;
+            string[] files = Directory.GetFiles(dir, "*.lrc");
+            int ok = 0;
+            string firstProblem = null;
+            foreach (string file in files)
+            {
+                LyricDocument real = LrcParser.Load(file);
+                if (real.Found && real.Synced && real.Lines.Count > 0) ok++;
+                else if (firstProblem == null) firstProblem = Path.GetFileName(file);
+            }
+            Check("歌词：真实文件批量解析", files.Length == 0 || ok == files.Length,
+                ok + "/" + files.Length + " 个文件解析成功" + (firstProblem == null ? "" : "，第一个失败：" + firstProblem));
         }
 
         private static void TestEncoding()
@@ -151,19 +166,28 @@ namespace LightMusic
                 Check("时长：MP3 解析", true, "跳过（没有测试文件）");
                 return;
             }
-            double parsed = DurationReader.Read(files[0]);
-            Check("时长：MP3 解析", parsed > 30 && parsed < 900, Path.GetFileName(files[0]) + " = " + parsed.ToString("0.0") + " s");
 
-            double actual = ProbeDurationWithMediaPlayer(files[0]);
-            if (actual > 0)
+            int limit = Math.Min(files.Length, 6);
+            int parsedOk = 0;
+            int matchOk = 0;
+            int probed = 0;
+            StringBuilder detail = new StringBuilder();
+            for (int i = 0; i < limit; i++)
             {
-                double diff = Math.Abs(actual - parsed);
-                Check("时长：与解码器一致", diff < 1.5, "解析 " + parsed.ToString("0.0") + " s / 解码器 " + actual.ToString("0.0") + " s");
+                double parsed = DurationReader.Read(files[i]);
+                if (parsed > 10 && parsed < 3600) parsedOk++;
+                double actual = ProbeDurationWithMediaPlayer(files[i]);
+                if (actual > 0)
+                {
+                    probed++;
+                    if (Math.Abs(actual - parsed) < 1.5) matchOk++;
+                    else detail.Append(Path.GetFileName(files[i]) + " 解析 " + parsed.ToString("0.0")
+                        + " / 解码 " + actual.ToString("0.0") + "; ");
+                }
             }
-            else
-            {
-                Check("时长：与解码器一致", true, "跳过（解码器未返回时长）");
-            }
+            Check("时长：MP3 解析", parsedOk == limit, parsedOk + "/" + limit + " 个文件通过");
+            Check("时长：与解码器一致", probed == 0 || matchOk == probed,
+                matchOk + "/" + probed + " 一致 " + detail);
         }
 
         private static double ProbeDurationWithMediaPlayer(string path)
