@@ -279,8 +279,8 @@ namespace Skylark
             cloudCacheCheck.Content = "把听过的歌缓存到本机（可离线播放）";
             cloudCacheCheck.Click += delegate
             {
-                // 勾选 = 听过的歌都留在本机；不勾选 = 不缓存
-                SetCacheMode(cloudCacheCheck.IsChecked == true ? 2 : 0);
+                // 勾选 = 听过的歌都留在本机；不勾选 = 只留正在听的和下一首
+                SetCacheMode(cloudCacheCheck.IsChecked == true ? 2 : 1);
             };
             Button clearCache = Ui.Button("清理缓存", "OutlineButton", delegate
             {
@@ -346,7 +346,7 @@ namespace Skylark
                 tokenHint);
         }
 
-        /// <summary>切换缓存开关：0 不缓存 / 2 听过的歌都留在本机。</summary>
+        /// <summary>切换缓存开关：1 只留正在听的和下一首（默认） / 2 听过的歌都留在本机。</summary>
         private void SetCacheMode(int mode)
         {
             main.Settings.CloudCacheMode = mode;
@@ -354,7 +354,8 @@ namespace Skylark
             main.PruneCloudCacheNow();
             SyncCacheMode();
             cacheInfo.Text = CacheText();
-            main.ShowToast(mode == 2 ? "已开启缓存：听过的歌都留在本机" : "已关闭缓存");
+            main.ShowToast(mode == 2 ? "已开启缓存：听过的歌都留在本机"
+                : "已关闭缓存：本机只留正在听的和下一首");
         }
 
         private void SyncCacheMode()
@@ -369,8 +370,8 @@ namespace Skylark
             }
             else
             {
-                cacheHint.Text = "未开启（默认）：不缓存。Windows 的 WPF 播放内核不支持网络流，"
-                    + "所以必须临时下载正在听的这一首，切歌或退出程序立刻删掉，磁盘上最多只短暂存在一首歌。";
+                cacheHint.Text = "未开启（默认）：本机只留正在听的那一首和下一首，切歌几乎不用等，"
+                    + "其余不保留，占的空间很小。（Windows 的播放内核不支持网络流，所以至少要临时下载。）";
             }
         }
 

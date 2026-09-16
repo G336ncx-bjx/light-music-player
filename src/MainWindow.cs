@@ -21,7 +21,7 @@ namespace Skylark
     public partial class MainWindow : Window
     {
         public const string AppName = "云雀";
-        public const string AppVersion = "3.2.0";
+        public const string AppVersion = "3.2.1";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -1410,14 +1410,7 @@ namespace Skylark
         public void PruneCloudCacheNow()
         {
             if (settings.CloudCacheMode == 2) return;
-            if (settings.CloudCacheMode == 0)
-            {
-                CloudCache.Clear();
-            }
-            else
-            {
-                PruneCloudCache(currentSong);
-            }
+            PruneCloudCache(currentSong, PeekNextSong());
             UpdateStatusText();
             Raise(SettingsChanged);
         }
@@ -1610,7 +1603,7 @@ namespace Skylark
             if (song == null) return;
             ReleaseOldCloudCache(song);
             currentSong = song;
-            PruneCloudCache(song);
+            PruneCloudCache(song, PeekNextSong());
             UpdateCurrentFlags();
             if (lyricsView != null) lyricsView.Load(song);
             if (titleText != null) titleText.Text = song.Title;
@@ -1792,7 +1785,6 @@ namespace Skylark
         private void PrefetchNext()
         {
             if (!IsCloudSource || queue.Count == 0) return;
-            if (settings.CloudCacheMode != 2) return;   // 不开缓存就不预取，免得白占本地
             int next = queueIndex + 1;
             if (next >= queue.Count) next = settings.Mode == PlayMode.ListLoop ? 0 : -1;
             if (next < 0 || next >= queue.Count) return;
@@ -1836,20 +1828,37 @@ namespace Skylark
             }
         }
 
+        /// <summary>下一首会播哪首（顺序播放到底就是没有；随机模式随便挑一首）。</summary>
+        private Song PeekNextSong()
+        {
+            if (queue.Count == 0) return null;
+            if (settings.Mode == PlayMode.Shuffle) return queue.Count <= 1 ? null : queue[RandomIndex()];
+            int at = queueIndex + 1;
+            if (at >= queue.Count)
+            {
+                if (settings.Mode == PlayMode.Sequential) return null;
+                at = 0;
+            }
+            if (at == queueIndex) return null;
+            return queue[at];
+        }
+
         /// <summary>
-        /// 空间策略：不开缓存时，本机只留正在听的那一首，其余文件删掉；
+        /// 空间策略：不开缓存时，本机只留「正在听的那一首 + 下一首」，其余文件删掉；
         /// .part 是正在下载的临时文件，跳过。
         /// </summary>
-        private void PruneCloudCache(Song keepCurrent)
+        private void PruneCloudCache(Song keepCurrent, Song keepNext)
         {
             if (settings.CloudCacheMode == 2) return;
             try
             {
                 string a = keepCurrent != null && keepCurrent.IsCloud ? CloudCache.FileFor(keepCurrent) : null;
+                string b = keepNext != null && keepNext.IsCloud ? CloudCache.FileFor(keepNext) : null;
                 foreach (string file in System.IO.Directory.GetFiles(CloudCache.Directory))
                 {
                     if (file.EndsWith(".part", StringComparison.OrdinalIgnoreCase)) continue;
                     if (a != null && string.Equals(file, a, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (b != null && string.Equals(file, b, StringComparison.OrdinalIgnoreCase)) continue;
                     try { File.Delete(file); }
                     catch (Exception) { }
                 }
@@ -1870,7 +1879,7 @@ namespace Skylark
             try
             {
                 string[] files = System.IO.Directory.GetFiles(CloudCache.Directory);
-                int keep = 1;   // 最多留正在听的那一首
+                int keep = 2;   // 最多留「正在听的那一首 + 下一首」
                 if (files.Length <= keep) return;
                 Array.Sort(files, delegate(string x, string y)
                 {
@@ -2274,7 +2283,8 @@ namespace Skylark
             if (timer != null) timer.Stop();
             TraceStep("closed: engine");
             engine.Close();
-            if (settings.CloudCacheMode != 2) CloudCache.Clear();   // 不开缓存：退出时清干净
+            // 不开缓存时，退出也只留「正在听的那一首 + 下一首」，多余的清掉
+            if (settings.CloudCacheMode != 2) PruneCloudCache(currentSong, PeekNextSong());
             TraceStep("closed: tray");
             if (tray != null)
             {

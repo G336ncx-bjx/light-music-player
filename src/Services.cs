@@ -806,9 +806,9 @@ namespace Skylark
                     if (s.Durations == null) s.Durations = new List<DurationEntry>();
                     if (string.IsNullOrEmpty(s.Theme)) s.Theme = "dark";
                     if (s.LyricFontSize < 16 || s.LyricFontSize > 96) s.LyricFontSize = 34;
-                    // v3.2 起用 cloudCacheMode（0 不缓存 / 2 听过的歌都留）代替老的 cloudCache 开关
+                    // v3.2 起用 cloudCacheMode（1 只留正在听的和下一首 / 2 听过的歌都留）代替老的 cloudCache 开关
                     if (s.CloudCacheEnabled) s.CloudCacheModeValue = 2;
-                    else if (s.CloudCacheModeValue != 2) s.CloudCacheModeValue = 0;
+                    else if (s.CloudCacheModeValue != 2) s.CloudCacheModeValue = 1;
                     return s;
                 }
             }

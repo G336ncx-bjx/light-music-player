@@ -375,8 +375,8 @@ namespace Skylark
             Source = "cloud";
             CloudUrl = string.Empty;
             CloudToken = string.Empty;
-            // 默认不缓存：Windows 的播放内核不支持网络流，只能临时下载正在听的那一首
-            CloudCacheModeValue = 0;
+            // 默认只留「正在听的那一首 + 下一首」：切歌几乎不用等，占的空间也很小
+            CloudCacheModeValue = 1;
             CloudCacheEnabled = false;
             FfmpegPath = string.Empty;
             CloseToTray = false;
