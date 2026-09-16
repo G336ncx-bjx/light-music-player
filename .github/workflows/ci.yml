@@ -27,8 +27,28 @@ jobs:
           Get-Content "$env:TEMP\skylark-selftest.log" -Encoding UTF8
           if ($p.ExitCode -ne 0) { throw "selftest failed (exit $($p.ExitCode))" }
 
+      - name: Prepare Android signing key
+        shell: powershell
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+        run: |
+          if ($env:KEYSTORE_BASE64) {
+            [IO.File]::WriteAllBytes("$PWD\android\skylark.jks", [Convert]::FromBase64String($env:KEYSTORE_BASE64))
+            [IO.File]::WriteAllText("$PWD\android\keystore.pass", $env:KEYSTORE_PASS)
+            Write-Output '签名：使用仓库密钥（与正式版一致）'
+          } else {
+            Write-Output '签名：未配置 ANDROID_KEYSTORE_BASE64，本次用临时密钥（仅供测试，不能覆盖安装正式版）'
+          }
+
+      - name: Build Android APK
+        shell: powershell
+        run: .\android\build.ps1
+
       - name: Upload exe
         uses: actions/upload-artifact@v7
         with:
           name: Skylark-dev
-          path: dist/Skylark.exe
+          path: |
+            dist/Skylark.exe
+            dist/Skylark-android.apk

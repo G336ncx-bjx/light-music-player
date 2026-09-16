@@ -27,6 +27,23 @@ jobs:
           Get-Content "$env:TEMP\skylark-selftest.log" -Encoding UTF8
           if ($p.ExitCode -ne 0) { throw "selftest failed (exit $($p.ExitCode))" }
 
+      - name: Prepare Android signing key
+        shell: powershell
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+        run: |
+          if (-not $env:KEYSTORE_BASE64 -or -not $env:KEYSTORE_PASS) {
+            throw '缺少 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASS：没有密钥就没法发布与正式版签名一致的 APK'
+          }
+          [IO.File]::WriteAllBytes("$PWD\android\skylark.jks", [Convert]::FromBase64String($env:KEYSTORE_BASE64))
+          [IO.File]::WriteAllText("$PWD\android\keystore.pass", $env:KEYSTORE_PASS)
+          Write-Output '签名：使用仓库密钥'
+
+      - name: Build Android APK
+        shell: powershell
+        run: .\android\build.ps1 -RequireKeyStore
+
       - name: Package
         shell: powershell
         run: |
@@ -38,16 +55,21 @@ jobs:
       - name: Checksum
         shell: powershell
         run: |
-          $hash = (Get-FileHash .\dist\Skylark.exe -Algorithm SHA256).Hash.ToLower()
-          "SHA256(Skylark.exe) = $hash" | Out-File -Encoding utf8 .\SHA256SUMS.txt
+          $exe = (Get-FileHash .\dist\Skylark.exe -Algorithm SHA256).Hash.ToLower()
+          $apk = (Get-FileHash .\dist\Skylark-android.apk -Algorithm SHA256).Hash.ToLower()
+          @(
+            "SHA256(Skylark.exe)         = $exe",
+            "SHA256(Skylark-android.apk) = $apk"
+          ) | Out-File -Encoding utf8 .\SHA256SUMS.txt
           Get-Content .\SHA256SUMS.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: Skylark-win-x64
+          name: Skylark
           path: |
             dist/Skylark.exe
+            dist/Skylark-android.apk
             Skylark-win-x64.zip
             SHA256SUMS.txt
 
@@ -57,29 +79,36 @@ jobs:
         with:
           name: 云雀 ${{ github.ref_name }}
           body: |
-            **云雀（Skylark）** —— 轻量级云端音乐播放器：**单个 exe、零依赖、不装任何运行库**。
+            **云雀（Skylark）** —— 轻量级云端音乐播放器：**Windows 单文件 exe、零依赖、不装任何运行库**，手机端是 **一个 APK**。
 
             ### 怎么用
 
-            1. 下载下面的 `Skylark.exe`（约 300 KB）双击运行（也可下载 zip，解压后运行）；
-            2. 首次打开会自动跳到「设置」，填入**你自己的云盘分享链接**或**资料库 API 令牌**（清华云盘 / Seafile 均可）；
-            3. 回到音乐库，点歌名即播放：支持歌词、桌面歌词（可锁定为鼠标穿透）、播放列表、上传与删除云端文件。
+            **Windows**：下载 `Skylark.exe`（约 300 KB）双击运行（也可下载 zip，解压后运行）；
 
-            ### 第一次运行提示「未知发布者」？
+            **Android**：下载 `Skylark-android.apk`，在手机上点开安装（需要允许「安装未知来源的应用」，
+            因为 APK 没有上架应用商店、也没有购买签名证书）。系统要求 Android 5.0 及以上。
 
-            这是正常现象：exe 没有购买代码签名证书，Windows 对未签名程序一律这么提示。点「**更多信息 → 仍要运行**」即可。
+            1. 首次打开会自动跳到「设置」，填入**你自己的云盘分享链接**或**资料库 API 令牌**（清华云盘 / Seafile 均可）；
+            2. 回到音乐库，点歌名即播放：支持歌词、播放列表、上传与删除云端文件；Windows 版还有桌面歌词（可锁定为鼠标穿透）。
+
+            ### 提示「未知发布者」/「未知来源」？
+
+            这是正常现象：exe 和 APK 都没有购买代码签名证书，Windows 和 Android 对未签名的程序一律这么提示。
+            Windows 点「**更多信息 → 仍要运行**」，Android 选择「**仍要安装**」即可。两个平台的签名是固定的，后续版本可以直接覆盖升级。
             如果不放心，可以：
 
             - 对照下面的 `SHA256SUMS.txt` 校验下载到的文件；
-            - 或者直接看源码（纯 C#，用系统自带编译器，`build.ps1` 一键构建）自己编一个。
+            - 或者直接看源码自己编一个（Windows 用系统自带编译器跑 `build.ps1`，Android 跑 `android\build.ps1`，都不需要装 Gradle）。
 
             ### 关于数据
 
             程序不会向任何服务器上传你的数据，只访问你在设置里填写的那个云盘地址；
-            听过的歌会缓存在 `%APPDATA%\Skylark\cache`，设置里可以看到占用并一键清理，也可以关掉缓存。
+            听过的歌会缓存在本机（Windows 在 `%APPDATA%\Skylark\cache`，Android 在应用私有目录），
+            设置里可以看到占用并一键清理，也可以关掉缓存。
             曲库统一使用 mp3 / m4a 等格式（v3.0.0 起不再支持 FLAC）。
           files: |
             dist/Skylark.exe
+            dist/Skylark-android.apk
             Skylark-win-x64.zip
             SHA256SUMS.txt
           generate_release_notes: true
