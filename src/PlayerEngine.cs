@@ -16,6 +16,8 @@ namespace Skylark
         private double anchor;
         private double pendingSeek = -1;
         private bool pendingPlay;
+        private bool mediaReady;
+        private string currentPath;
         private bool playing;
         private double volume = 0.8;
         private bool muted;
@@ -83,6 +85,26 @@ namespace Skylark
         public void Open(Song song, string localPath, bool autoPlay, double startAt)
         {
             if (song == null) return;
+
+            // WPF MediaPlayer 对「同一个文件重复 Open」会拖很久才触发 MediaOpened，
+            // 所以同一首（同一路径）重新点播放时，直接跳转 + 播放，不再重新打开文件。
+            if (mediaReady && currentPath != null
+                && string.Equals(currentPath, localPath, StringComparison.OrdinalIgnoreCase))
+            {
+                Seek(startAt > 0 ? startAt : 0);
+                if (autoPlay) Play();
+                else
+                {
+                    Pause();
+                    anchor = startAt > 0 ? startAt : 0;
+                }
+                EventHandler same = Opened;
+                if (same != null) same(this, EventArgs.Empty);
+                return;
+            }
+
+            mediaReady = false;
+            currentPath = localPath;
             current = song;
             playing = false;
             anchor = startAt > 0 ? startAt : 0;
@@ -199,6 +221,8 @@ namespace Skylark
         public void Close()
         {
             playing = false;
+            mediaReady = false;
+            currentPath = null;
             try
             {
                 player.Stop();
@@ -211,6 +235,7 @@ namespace Skylark
 
         private void HandleOpened(object sender, EventArgs e)
         {
+            mediaReady = true;
             if (player.NaturalDuration.HasTimeSpan)
             {
                 double seconds = player.NaturalDuration.TimeSpan.TotalSeconds;

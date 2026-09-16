@@ -739,11 +739,11 @@ namespace Skylark
             {
                 trace.AppendLine(DateTime.Now.ToString("HH:mm:ss.fff") + "  " + step);
                 string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "skylark-smoke.log");
-                using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Create,
+                using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Append,
                     System.IO.FileAccess.Write, System.IO.FileShare.ReadWrite))
                 using (System.IO.StreamWriter writer = new System.IO.StreamWriter(fs, System.Text.Encoding.UTF8))
                 {
-                    writer.Write(trace.ToString());
+                    writer.WriteLine(DateTime.Now.ToString("HH:mm:ss.fff") + "  " + step);
                 }
             }
             catch (Exception)

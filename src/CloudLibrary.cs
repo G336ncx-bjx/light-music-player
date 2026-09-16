@@ -236,6 +236,8 @@ namespace Skylark
                 {
                     try
                     {
+                        // 只清理「陈旧的」：正在播放的实例可能还在用它（刚解码出来的不删）
+                        if (DateTime.Now - File.GetLastWriteTime(file) < TimeSpan.FromHours(3)) continue;
                         File.Delete(file);
                     }
                     catch (Exception)

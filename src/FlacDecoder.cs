@@ -80,7 +80,10 @@ namespace Skylark
 
                     // ---- 写 WAV 头（大小先占位）----
                     long dataStart;
-                    using (FileStream output = new FileStream(wavPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    // 先写到 .part，全部解完再改名：这样即使中途失败/被杀，
+                    // 也不会留下一个「看起来存在但其实是半截」的 WAV 被拿去播放。
+                    string tempPath = wavPath + ".part";
+                    using (FileStream output = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
                     {
                         BinaryWriter writer = new BinaryWriter(output);
                         WriteWavHeader(writer, sampleRate, channels, outputBits, 0);
@@ -135,6 +138,8 @@ namespace Skylark
                         WriteWavHeader(writer, sampleRate, channels, outputBits, dataBytes);
                         writer.Flush();
                     }
+                    if (File.Exists(wavPath)) File.Delete(wavPath);
+                    File.Move(tempPath, wavPath);
                     return true;
                 }
             }

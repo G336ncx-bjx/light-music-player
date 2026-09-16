@@ -21,7 +21,7 @@ namespace Skylark
     public partial class MainWindow : Window
     {
         public const string AppName = "云雀";
-        public const string AppVersion = "2.0.0";
+        public const string AppVersion = "2.0.1";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -101,11 +101,20 @@ namespace Skylark
             engine.Volume = settings.Volume;
             engine.IsMuted = settings.Muted;
             engine.TrackEnded += delegate { Dispatcher.BeginInvoke((Action)delegate { Advance(false); }); };
-            engine.Opened += delegate { Dispatcher.BeginInvoke((Action)OnTrackOpened); };
+            engine.Opened += delegate
+            {
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    TraceStep("engine opened: duration=" + engine.Duration.ToString("0.0")
+                        + " playing=" + engine.IsPlaying);
+                    OnTrackOpened();
+                });
+            };
             engine.Failed += delegate(object s, EventArgs e)
             {
                 PlayerErrorArgs args = e as PlayerErrorArgs;
                 string message = args != null ? args.Message : "播放失败";
+                TraceStep("engine failed: " + message);
                 Dispatcher.BeginInvoke((Action)delegate { ShowToast("播放失败：" + message); });
             };
 
@@ -1578,7 +1587,7 @@ namespace Skylark
         private void OpenTrack(Song song, bool autoPlay, double startAt)
         {
             if (song == null) return;
-            ReleaseOldCloudCache();
+            ReleaseOldCloudCache(song);
             ReleaseDecodedWav(song);
             currentSong = song;
             UpdateCurrentFlags();
@@ -1594,6 +1603,9 @@ namespace Skylark
             if (song.IsCloud)
             {
                 string cached = CloudCache.CachedPath(song);
+                TraceStep("open: cloud  cached=" + (cached == null ? "NULL" : "hit")
+                    + " songSize=" + song.Size + " fileSize="
+                    + (File.Exists(CloudCache.FileFor(song)) ? new FileInfo(CloudCache.FileFor(song)).Length.ToString() : "-"));
                 if (cached == null)
                 {
                     StartCloudBuffering(song, autoPlay, startAt);
@@ -1602,7 +1614,15 @@ namespace Skylark
                 localPath = cached;
             }
 
-            // FLAC / OGG 这类系统内核放不了的格式：用 ffmpeg 转成 MP3（缓存，只转一次）
+            PlayResolved(song, localPath, autoPlay, startAt);
+        }
+
+        /// <summary>
+        /// 统一入口：根据格式选播放方式。
+        /// mp3/wav/m4a… 直接播；FLAC 用内置解码器解成 WAV；其它冷门格式交给 ffmpeg。
+        /// </summary>
+        private void PlayResolved(Song song, string localPath, bool autoPlay, double startAt)
+        {
             if (Ffmpeg.NeedsTranscode(localPath))
             {
                 string ext = Path.GetExtension(localPath).ToLowerInvariant();
@@ -1610,40 +1630,72 @@ namespace Skylark
                 {
                     // FLAC 用内置解码器解成 WAV（不需要任何外部程序）
                     string decoded = CloudCache.DecodedPath(song);
+                    if (IsDecodedWavComplete(decoded, song.Duration))
+                    {
+                        PlayFile(song, decoded, autoPlay, startAt);
+                        return;
+                    }
                     if (File.Exists(decoded))
                     {
-                        localPath = decoded;
+                        try { File.Delete(decoded); } catch (Exception) { }
                     }
-                    else
-                    {
-                        StartFlacDecode(song, localPath, autoPlay, startAt);
-                        return;
-                    }
+                    StartFlacDecode(song, localPath, autoPlay, startAt);
+                    return;
                 }
-                else
-                {
-                    string transcoded = CloudCache.TranscodedPath(song);
-                    if (File.Exists(transcoded))
-                    {
-                        localPath = transcoded;
-                    }
-                    else
-                    {
-                        StartTranscode(song, localPath, autoPlay, startAt);
-                        return;
-                    }
-                }
-            }
 
+                string transcoded = CloudCache.TranscodedPath(song);
+                if (File.Exists(transcoded))
+                {
+                    PlayFile(song, transcoded, autoPlay, startAt);
+                    return;
+                }
+                StartTranscode(song, localPath, autoPlay, startAt);
+                return;
+            }
+            PlayFile(song, localPath, autoPlay, startAt);
+        }
+
+        /// <summary>真正交给播放内核，并顺手预取下一首。</summary>
+        private void PlayFile(Song song, string path, bool autoPlay, double startAt)
+        {
             try
             {
-                engine.Open(song, localPath, autoPlay, startAt);
+                engine.Open(song, path, autoPlay, startAt);
             }
             catch (Exception ex)
             {
                 ShowToast("无法播放：" + ex.Message);
             }
             PrefetchNext();
+        }
+
+        /// <summary>
+        /// 判断解码出来的 WAV 是否完整：读它的头部算出应有的字节数，和实际大小比对
+        /// （防止上次解码被中断留下的半截文件被当成正常音频播放）。
+        /// </summary>
+        private static bool IsDecodedWavComplete(string path, double durationSeconds)
+        {
+            try
+            {
+                if (!File.Exists(path)) return false;
+                FileInfo info = new FileInfo(path);
+                if (info.Length < 1024) return false;
+                if (durationSeconds <= 0) return true;      // 不知道时长就不敢乱删
+
+                byte[] header = new byte[44];
+                using (FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    if (stream.Read(header, 0, 44) < 44) return false;
+                }
+                int byteRate = header[28] | (header[29] << 8) | (header[30] << 16) | (header[31] << 24);
+                if (byteRate <= 0) return false;
+                long expected = 44L + (long)(byteRate * durationSeconds);
+                return info.Length >= expected * 0.97;
+            }
+            catch (Exception)
+            {
+                return true;    // 判断不了就按可用处理
+            }
         }
 
         /// <summary>内置 FLAC 解码：解成临时 WAV 后播放（不需要装任何东西）。</summary>
@@ -1660,6 +1712,8 @@ namespace Skylark
 
             ThreadPool.QueueUserWorkItem(delegate
             {
+                DateTime started = DateTime.Now;
+                TraceStep("flac decode start: " + Path.GetFileName(sourcePath));
                 string error;
                 bool ok = FlacDecoder.Decode(sourcePath, target, delegate(int percent)
                 {
@@ -1670,6 +1724,11 @@ namespace Skylark
                         if (artistText != null) artistText.Text = "正在解码 FLAC… " + percent + "%";
                     });
                 }, out error);
+                TraceStep("flac decode " + (ok ? "ok" : "failed") + " in "
+                    + (DateTime.Now - started).TotalSeconds.ToString("0.0") + "s"
+                    + (error == null ? "" : " err=" + error)
+                    + " targetExists=" + File.Exists(target)
+                    + " size=" + (File.Exists(target) ? new FileInfo(target).Length.ToString() : "-"));
 
                 Dispatcher.BeginInvoke((Action)delegate
                 {
@@ -1686,9 +1745,11 @@ namespace Skylark
                     {
                         engine.Open(song, target, autoPlay, startAt);
                         decodedWavInUse = target;
+                        TraceStep("flac play issued: autoPlay=" + autoPlay + " path=" + Path.GetFileName(target));
                     }
                     catch (Exception ex)
                     {
+                        TraceStep("flac play failed: " + ex.Message);
                         ShowToast("无法播放：" + ex.Message);
                     }
                     if (artistText != null)
@@ -1793,18 +1854,12 @@ namespace Skylark
                         TraceStep("buffer done: " + target);
                         if (bufferingBar != null) bufferingBar.Visibility = Visibility.Collapsed;
                         if (currentSong != song) return;
-                        try
-                        {
-                            engine.Open(song, target, autoPlay, startAt);
-                        }
-                        catch (Exception ex)
-                        {
-                            ShowToast("无法播放：" + ex.Message);
-                        }
                         if (artistText != null)
                             artistText.Text = song.ArtistText + (song.HasLyrics ? " · 有歌词" : "");
                         UpdateStatusText();
-                        PrefetchNext();
+                        // ★ 下载完必须再走一遍「按格式选播放方式」，
+                        //   否则 FLAC 会被直接丢给系统内核（它放不了）。
+                        PlayResolved(song, target, autoPlay, startAt);
                     });
                 }
                 catch (Exception ex)
@@ -1861,12 +1916,17 @@ namespace Skylark
             decodedWavInUse = null;
         }
 
-        /// <summary>关闭「保留缓存」时，切歌后删除上一首的缓存文件。</summary>
-        private void ReleaseOldCloudCache()
+        /// <summary>
+        /// 关闭「保留缓存」时，切歌后删掉上一首的缓存文件。
+        /// 注意：如果新播放的就是同一首（重播、暂停后再点播放），不能删，
+        /// 否则会把自己刚下载好的文件删掉，导致又重新下载一遍。
+        /// </summary>
+        private void ReleaseOldCloudCache(Song next)
         {
             if (settings.CloudCacheEnabled) return;
             Song previous = currentSong;
             if (previous == null || !previous.IsCloud) return;
+            if (next != null && object.ReferenceEquals(next, previous)) return;
             string path = CloudCache.FileFor(previous);
             try
             {
