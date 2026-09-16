@@ -23,6 +23,25 @@ namespace Skylark
         private static string dataDir;
 
         /// <summary>
+        /// 测试 / 截图模式用：把数据目录指到临时目录，绝不碰用户真实配置。
+        /// （以前自检和截图模式会读写 %APPDATA%\Skylark\settings.json，
+        /// 退出时还会把「当前播放列表」写回去，等于把用户的列表覆盖掉。）
+        /// </summary>
+        public static void UseIsolatedDataDir(string tag)
+        {
+            try
+            {
+                string dir = Path.Combine(Path.GetTempPath(), "skylark-" + tag);
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                dataDir = dir;
+            }
+            catch (Exception)
+            {
+                // 建不出来就退回默认目录
+            }
+        }
+
+        /// <summary>
         /// 配置目录：优先 %APPDATA%\Skylark，若不可写（例如受限环境）则退回到 exe 目录下的 data。
         /// 第一次以新名字启动时，会把旧版「LightMusic」目录整体搬过来（配置 + 缓存都不丢）。
         /// </summary>

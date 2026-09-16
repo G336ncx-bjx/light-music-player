@@ -21,12 +21,14 @@ namespace Skylark
             if (args.Length > 0 && args[0] == "--selftest")
             {
                 AttachConsole();
+                AppPaths.UseIsolatedDataDir("selftest");
                 Environment.Exit(SelfTest.Run());
                 return;
             }
             if (args.Length > 0 && args[0] == "--shot")
             {
                 AttachConsole();
+                AppPaths.UseIsolatedDataDir("shot");
                 int code = 1;
                 try
                 {
@@ -43,12 +45,14 @@ namespace Skylark
             if (args.Length > 0 && args[0] == "--smoke")
             {
                 AttachConsole();
+                AppPaths.UseIsolatedDataDir("smoke");
                 Environment.Exit(SmokeRun(args));
                 return;
             }
             if (args.Length > 0 && args[0] == "--lockcheck")
             {
                 AttachConsole();
+                AppPaths.UseIsolatedDataDir("lockcheck");
                 Environment.Exit(LockCheck());
                 return;
             }

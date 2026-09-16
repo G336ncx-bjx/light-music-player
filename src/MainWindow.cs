@@ -21,7 +21,7 @@ namespace Skylark
     public partial class MainWindow : Window
     {
         public const string AppName = "云雀";
-        public const string AppVersion = "3.2.3";
+        public const string AppVersion = "3.2.4";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -647,9 +647,15 @@ namespace Skylark
         {
             settings.Volume = engine.Volume;
             settings.Muted = engine.IsMuted;
-            settings.Queue = new List<string>();
-            foreach (Song s in queue) settings.Queue.Add(s.Path);
-            settings.QueueIndex = queueIndex;
+            // 播放列表：只有「已经恢复过上次的列表」或「列表里确实有歌」时才写回。
+            // 否则启动早期（云盘还没扫完、内存列表还是空的）的那次自动保存
+            // 会把配置文件里保存的播放列表清空，下次打开就什么都没了。
+            if (restoreAttempted || queue.Count > 0)
+            {
+                settings.Queue = new List<string>();
+                foreach (Song s in queue) settings.Queue.Add(s.Path);
+                settings.QueueIndex = queueIndex;
+            }
             SettingsStore.Save(settings);
         }
 
