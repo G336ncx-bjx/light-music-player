@@ -4,6 +4,19 @@ bin/
 obj/
 *.exe
 *.pdb
+android/build/
+.toolchain/
+
+# Android 构建中间产物（APK 由 CI 打包，见 dist/）
+*.apk
+*.idsig
+*.ap_
+
+# Android 签名密钥与口令：只留在本机 / GitHub Secrets，绝不入库
+android/skylark.jks
+android/keystore.pass
+*.jks
+*.keystore
 
 # 运行期数据（设置、播放队列等）
 data/

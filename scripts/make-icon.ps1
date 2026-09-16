@@ -2,93 +2,12 @@
 # NOTE: keep this file ASCII-only - Windows PowerShell 5.1 reads non-BOM
 # script files with the system ANSI code page and mangles non-ASCII text.
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Drawing
+. (Join-Path $PSScriptRoot 'icon-artwork.ps1')
 
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $assets = Join-Path $root 'assets'
 if (-not (Test-Path $assets)) { New-Item -ItemType Directory -Path $assets | Out-Null }
 $target = Join-Path $assets 'app.ico'
-
-function New-RoundRect($x, $y, $w, $h, $r) {
-    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $d = $r * 2
-    $p.AddArc($x, $y, $d, $d, 180, 90)
-    $p.AddArc($x + $w - $d, $y, $d, $d, 270, 90)
-    $p.AddArc($x + $w - $d, $y + $h - $d, $d, $d, 0, 90)
-    $p.AddArc($x, $y + $h - $d, $d, $d, 90, 90)
-    $p.CloseFigure()
-    return $p
-}
-
-function New-IconBitmap([int]$size) {
-    $bmp = New-Object System.Drawing.Bitmap -ArgumentList $size, $size, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-    $g.Clear([System.Drawing.Color]::Transparent)
-
-    $s = [double]$size
-    $pad = $s * 0.055
-    $inner = $s - 2 * $pad
-    $path = New-RoundRect $pad $pad $inner $inner ($inner * 0.26)
-
-    $c1 = [System.Drawing.Color]::FromArgb(255, 56, 189, 248)
-    $c2 = [System.Drawing.Color]::FromArgb(255, 99, 102, 241)
-    $p1 = New-Object System.Drawing.PointF -ArgumentList 0, 0
-    $p2 = New-Object System.Drawing.PointF -ArgumentList $s, $s
-    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush -ArgumentList $p1, $p2, $c1, $c2
-    $g.FillPath($brush, $path)
-
-    $g1 = New-Object System.Drawing.PointF -ArgumentList 0, 0
-    $g2 = New-Object System.Drawing.PointF -ArgumentList 0, ($s * 0.55)
-    $hl = New-Object System.Drawing.Drawing2D.LinearGradientBrush -ArgumentList $g1, $g2,
-        ([System.Drawing.Color]::FromArgb(40, 255, 255, 255)), ([System.Drawing.Color]::FromArgb(0, 255, 255, 255))
-    $g.FillPath($hl, $path)
-
-    $white = New-Object System.Drawing.SolidBrush -ArgumentList ([System.Drawing.Color]::FromArgb(255, 255, 255, 255))
-
-    $headW = $s * 0.200
-    $headH = $s * 0.150
-    $stemW = $s * 0.052
-    $x1 = $s * 0.268
-    $x2 = $s * 0.582
-    $yTop = $s * 0.255
-    $y1 = $s * 0.638
-    $y2 = $y1 - $s * 0.062
-    $stemX1 = $x1 + $headW * 0.74
-    $stemX2 = $x2 + $headW * 0.74
-
-    # stems
-    $g.FillRectangle($white, [float]$stemX1, [float]$yTop, [float]$stemW, [float]($y1 + $headH * 0.5 - $yTop))
-    $g.FillRectangle($white, [float]$stemX2, [float]$yTop, [float]$stemW, [float]($y2 + $headH * 0.5 - $yTop))
-
-    # note heads (slightly rotated ellipses)
-    $m1 = New-Object System.Drawing.Drawing2D.Matrix
-    $c1p = New-Object System.Drawing.PointF -ArgumentList ([float]($x1 + $headW / 2)), ([float]($y1 + $headH / 2))
-    $m1.RotateAt(-20, $c1p)
-    $g.Transform = $m1
-    $g.FillEllipse($white, [float]$x1, [float]$y1, [float]$headW, [float]$headH)
-    $g.ResetTransform()
-
-    $m2 = New-Object System.Drawing.Drawing2D.Matrix
-    $c2p = New-Object System.Drawing.PointF -ArgumentList ([float]($x2 + $headW / 2)), ([float]($y2 + $headH / 2))
-    $m2.RotateAt(-20, $c2p)
-    $g.Transform = $m2
-    $g.FillEllipse($white, [float]$x2, [float]$y2, [float]$headW, [float]$headH)
-    $g.ResetTransform()
-
-    # beam connecting the stems
-    $beam = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $b1 = New-Object System.Drawing.PointF -ArgumentList ([float]$stemX1), ([float]$yTop)
-    $b2 = New-Object System.Drawing.PointF -ArgumentList ([float]($stemX2 + $stemW)), ([float]($yTop - $s * 0.062))
-    $b3 = New-Object System.Drawing.PointF -ArgumentList ([float]($stemX2 + $stemW)), ([float]($yTop - $s * 0.062 + $s * 0.105))
-    $b4 = New-Object System.Drawing.PointF -ArgumentList ([float]$stemX1), ([float]($yTop + $s * 0.105))
-    $beam.AddPolygon(@($b1, $b2, $b3, $b4))
-    $g.FillPath($white, $beam)
-
-    $g.Dispose()
-    return $bmp
-}
 
 function Get-BmpEntryBytes($bmp) {
     $w = $bmp.Width
