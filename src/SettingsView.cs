@@ -595,9 +595,10 @@ namespace Skylark
 
         private UIElement BuildAboutCard()
         {
-            TextBlock version = Ui.Text(MainWindow.AppName + "  v" + MainWindow.AppVersion + "  ·  轻量级本地音乐播放器", 13, "Text");
+            TextBlock version = Ui.Text(MainWindow.AppName + "  v" + MainWindow.AppVersion + "  ·  轻量级云端音乐播放器（Windows / Android）", 13, "Text");
             TextBlock tech = Ui.Text(
-                "纯 Windows 原生实现，无需安装任何运行库；歌曲与歌词从你的云盘分享文件夹读取，播放时按需缓存到本地。",
+                "纯 Windows 原生实现，无需安装任何运行库；歌曲与歌词从你的云盘分享文件夹读取，播放时按需缓存到本地。\n" +
+                "Android 版（Skylark-android.apk）用同一个云盘曲库，不用重新整理歌曲。",
                 12, "TextMuted");
             tech.Margin = new Thickness(0, 6, 0, 0);
             tech.TextWrapping = TextWrapping.Wrap;
