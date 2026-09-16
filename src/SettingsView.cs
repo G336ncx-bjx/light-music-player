@@ -30,6 +30,7 @@ namespace LightMusic
         private readonly Dictionary<string, Border> colorSwatches = new Dictionary<string, Border>();
         private RadioButton darkTheme;
         private RadioButton lightTheme;
+        private RadioButton systemTheme;
         private RadioButton modeSequential;
         private RadioButton modeListLoop;
         private RadioButton modeSingleLoop;
@@ -45,19 +46,30 @@ namespace LightMusic
             scroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
 
             StackPanel page = new StackPanel();
-            page.MaxWidth = 860;
-            page.HorizontalAlignment = HorizontalAlignment.Left;
+            page.HorizontalAlignment = HorizontalAlignment.Stretch;
 
             TextBlock title = Ui.Text("设置", 21, "Text", FontWeights.SemiBold);
             title.Margin = new Thickness(2, 0, 0, 14);
             page.Children.Add(title);
 
-            page.Children.Add(BuildLibraryCard());
-            page.Children.Add(BuildPlayCard());
-            page.Children.Add(BuildLyricCard());
-            page.Children.Add(BuildAppearanceCard());
-            page.Children.Add(BuildWindowCard());
-            page.Children.Add(BuildAboutCard());
+            // 布局：音乐库整行，中间两列，关于整行
+            Grid columns = new Grid();
+            columns.ColumnDefinitions.Add(new ColumnDefinition());
+            columns.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            columns.ColumnDefinitions.Add(new ColumnDefinition());
+            columns.ColumnDefinitions[1].Width = Ui.Px(18);
+            columns.ColumnDefinitions.Add(new ColumnDefinition());
+            columns.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
+            for (int i = 0; i < 4; i++) columns.RowDefinitions.Add(new RowDefinition());
+            for (int i = 0; i < 4; i++) columns.RowDefinitions[i].Height = GridLength.Auto;
+
+            Put(columns, BuildLibraryCard(), 0, 0, 3);
+            Put(columns, BuildPlayCard(), 0, 1, 1);
+            Put(columns, BuildLyricCard(), 2, 1, 1);
+            Put(columns, BuildAppearanceCard(), 0, 2, 1);
+            Put(columns, BuildWindowCard(), 2, 2, 1);
+            Put(columns, BuildAboutCard(), 0, 3, 3);
+            page.Children.Add(columns);
 
             scroll.Content = page;
             Content = scroll;
@@ -65,12 +77,37 @@ namespace LightMusic
             main.SettingsChanged += delegate { Refresh(); };
         }
 
+        private static void Put(Grid grid, UIElement element, int column, int row, int columnSpan)
+        {
+            Grid.SetColumn(element, column);
+            Grid.SetRow(element, row);
+            Grid.SetColumnSpan(element, columnSpan);
+            grid.Children.Add(element);
+        }
+
+        /// <summary>标签在上、控件在下的行，适合分段按钮这类较宽的控件。</summary>
+        private UIElement StackedRow(string label, string hint, UIElement control)
+        {
+            TextBlock name = Ui.Text(label, 13, "TextDim");
+            control.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 8, 0, 0));
+            StackPanel panel = Ui.Column(0, name);
+            if (!string.IsNullOrEmpty(hint))
+            {
+                TextBlock h = Ui.Text(hint, 11.5, "TextMuted");
+                h.Margin = new Thickness(0, 4, 0, 0);
+                h.TextWrapping = TextWrapping.Wrap;
+                panel.Children.Add(h);
+            }
+            panel.Children.Add(control);
+            return panel;
+        }
+
         private Border Card(string title, params UIElement[] rows)
         {
             Border card = new Border();
             card.Style = (Style)Application.Current.Resources["CardBox"];
             card.Margin = new Thickness(0, 0, 0, 14);
-            card.Padding = new Thickness(20, 16, 20, 18);
+            card.Padding = new Thickness(20, 16, 20, 22);
 
             StackPanel panel = new StackPanel();
             TextBlock header = Ui.Text(title, 15, "Text", FontWeights.SemiBold);
@@ -222,7 +259,7 @@ namespace LightMusic
             modeSingleLoop.Click += delegate { main.SetMode(PlayMode.SingleLoop); SyncMode(); };
             modeShuffle.Click += delegate { main.SetMode(PlayMode.Shuffle); SyncMode(); };
 
-            return Card("播放", checks, Row("默认播放模式", "", modes));
+            return Card("播放", checks, StackedRow("默认播放模式", "", modes));
         }
 
         private UIElement BuildLyricCard()
@@ -283,9 +320,9 @@ namespace LightMusic
             hint.TextWrapping = TextWrapping.Wrap;
 
             return Card("桌面歌词",
-                Row("歌词字号", "", fontRow),
-                Row("不透明度", "", opacityRow),
-                Row("歌词颜色", "", colorRow),
+                StackedRow("歌词字号", "", fontRow),
+                StackedRow("不透明度", "", opacityRow),
+                StackedRow("歌词颜色", "", colorRow),
                 checks,
                 hint);
         }
@@ -315,14 +352,21 @@ namespace LightMusic
 
         private UIElement BuildAppearanceCard()
         {
+            systemTheme = new RadioButton();
+            systemTheme.Content = "跟随系统";
             darkTheme = new RadioButton();
             darkTheme.Content = "深色";
             lightTheme = new RadioButton();
             lightTheme.Content = "浅色";
-            StackPanel themes = Segmented(darkTheme, lightTheme);
+            StackPanel themes = Segmented(systemTheme, darkTheme, lightTheme);
+            systemTheme.Click += delegate { SetTheme("system"); };
             darkTheme.Click += delegate { SetTheme("dark"); };
             lightTheme.Click += delegate { SetTheme("light"); };
-            return Card("外观", Row("主题", "深色更适合夜间听歌", themes));
+
+            TextBlock hint = Ui.Text("跟随系统：自动匹配 Windows 的浅色 / 深色设置。", 11.5, "TextMuted");
+            hint.TextWrapping = TextWrapping.Wrap;
+
+            return Card("外观", StackedRow("主题", "", themes), hint);
         }
 
         private UIElement BuildWindowCard()
@@ -380,8 +424,7 @@ namespace LightMusic
 
         private void SetTheme(string theme)
         {
-            if (Theme.Current == theme) return;
-            main.ToggleTheme();
+            main.SetThemeMode(theme);
             UpdateThemeButtons();
         }
 
@@ -424,8 +467,9 @@ namespace LightMusic
 
         private void UpdateThemeButtons()
         {
-            darkTheme.IsChecked = Theme.Current == "dark";
-            lightTheme.IsChecked = Theme.Current == "light";
+            systemTheme.IsChecked = Theme.Mode == "system";
+            darkTheme.IsChecked = Theme.Mode == "dark";
+            lightTheme.IsChecked = Theme.Mode == "light";
         }
 
         private void UpdateSwatches()

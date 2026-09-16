@@ -55,15 +55,9 @@ namespace LightMusic
             list.ItemContainerStyle = (Style)Application.Current.Resources["SongItem"];
             list.ItemTemplate = (DataTemplate)Application.Current.Resources["QueueRowTemplate"];
             list.Padding = new Thickness(0, 2, 0, 8);
-            list.MouseDoubleClick += delegate(object sender, MouseButtonEventArgs e)
-            {
-                Song song = SongAt(e.OriginalSource as DependencyObject);
-                if (song != null)
-                {
-                    int idx = main.Queue.IndexOf(song);
-                    if (idx >= 0) main.PlayFrom(main.Queue, idx);
-                }
-            };
+            list.MouseDoubleClick += delegate(object sender, MouseButtonEventArgs e) { PlayAt(e); };
+            list.AddHandler(UIElement.MouseLeftButtonUpEvent,
+                new MouseButtonEventHandler(delegate(object sender, MouseButtonEventArgs e) { PlayAt(e); }), true);
             list.PreviewMouseRightButtonDown += delegate(object sender, MouseButtonEventArgs e)
             {
                 ListBoxItem item = FindItem(e.OriginalSource as DependencyObject);
@@ -90,6 +84,46 @@ namespace LightMusic
             root.Children.Add(listHost);
 
             Content = root;
+        }
+
+        /// <summary>单击某一行播放它；点右侧「✕」则是从队列移除。</summary>
+        private void PlayAt(MouseButtonEventArgs e)
+        {
+            DependencyObject source = e.OriginalSource as DependencyObject;
+            if (FindAncestor<System.Windows.Controls.Primitives.ScrollBar>(source) != null) return;
+
+            ListBoxItem item = FindItem(source);
+            if (item == null) return;
+            Song song = item.DataContext as Song;
+            if (song == null) return;
+
+            if (FindAction(source, "remove"))
+            {
+                main.RemoveFromQueue(song);
+                return;
+            }
+            int idx = main.Queue.IndexOf(song);
+            if (idx >= 0) main.PlayFrom(main.Queue, idx);
+        }
+
+        private static bool FindAction(DependencyObject source, string tag)
+        {
+            while (source != null)
+            {
+                FrameworkElement element = source as FrameworkElement;
+                if (element != null && element.Tag != null && object.Equals(element.Tag, tag)) return true;
+                source = VisualTreeHelper.GetParent(source);
+            }
+            return false;
+        }
+
+        private static T FindAncestor<T>(DependencyObject source) where T : DependencyObject
+        {
+            while (source != null && !(source is T))
+            {
+                source = VisualTreeHelper.GetParent(source);
+            }
+            return source as T;
         }
 
         public void RefreshItems()

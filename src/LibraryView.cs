@@ -37,20 +37,38 @@ namespace LightMusic
             TextBlock title = Ui.Text("音乐库", 21, "Text", FontWeights.SemiBold);
             summary.Margin = new Thickness(0, 4, 0, 0);
             StackPanel head = Ui.Column(0, title, summary);
+            head.VerticalAlignment = VerticalAlignment.Center;
             head.Margin = new Thickness(2, 0, 0, 12);
-            root.Children.Add(head);
+
+            Button playAll = IconTextButton("play", "播放全部", "PrimaryButton", delegate { PlayAll(); });
+            Button shuffleAll = IconTextButton("shuffle", "随机播放", "OutlineButton", delegate { ShuffleAll(); });
+            StackPanel headActions = Ui.Row(8, playAll, shuffleAll);
+            headActions.VerticalAlignment = VerticalAlignment.Center;
+
+            Grid headRow = new Grid();
+            headRow.ColumnDefinitions.Add(new ColumnDefinition());
+            headRow.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            headRow.ColumnDefinitions.Add(new ColumnDefinition());
+            headRow.ColumnDefinitions[1].Width = GridLength.Auto;
+            headRow.Children.Add(head);
+            Grid.SetColumn(headActions, 1);
+            headRow.Children.Add(headActions);
+            headRow.Margin = new Thickness(0, 0, 0, 12);
+            root.Children.Add(headRow);
 
             // 列头
             Grid columns = new Grid();
             columns.Margin = new Thickness(10, 0, 22, 2);
             columns.ColumnDefinitions.Add(new ColumnDefinition());
-            columns.ColumnDefinitions[0].Width = Ui.Px(48);
+            columns.ColumnDefinitions[0].Width = Ui.Px(56);
             columns.ColumnDefinitions.Add(new ColumnDefinition());
             columns.ColumnDefinitions[1].Width = Ui.Stars(1);
             columns.ColumnDefinitions.Add(new ColumnDefinition());
             columns.ColumnDefinitions[2].Width = Ui.Px(190);
             columns.ColumnDefinitions.Add(new ColumnDefinition());
-            columns.ColumnDefinitions[3].Width = Ui.Px(62);
+            columns.ColumnDefinitions[3].Width = Ui.Px(58);
+            columns.ColumnDefinitions.Add(new ColumnDefinition());
+            columns.ColumnDefinitions[4].Width = Ui.Px(36);
 
             Style headerStyle = (Style)Application.Current.Resources["ColumnHeader"];
             SetupHeader(headIndex, "序号", headerStyle, SortField.Default);
@@ -78,8 +96,10 @@ namespace LightMusic
             list.ItemContainerStyle = (Style)Application.Current.Resources["SongItem"];
             list.ItemTemplate = (DataTemplate)Application.Current.Resources["SongRowTemplate"];
             list.Padding = new Thickness(0, 2, 0, 8);
-            list.SelectionMode = SelectionMode.Extended;
+            list.SelectionMode = SelectionMode.Single;
             list.MouseDoubleClick += OnDoubleClick;
+            list.AddHandler(UIElement.MouseLeftButtonUpEvent,
+                new MouseButtonEventHandler(OnItemClick), true);
             list.PreviewMouseRightButtonDown += OnRightDown;
             list.ContextMenuOpening += OnContextMenu;
             list.KeyDown += OnKeyDown;
@@ -203,6 +223,81 @@ namespace LightMusic
         {
             Song song = SongAt(e.OriginalSource as DependencyObject);
             if (song != null) main.PlaySong(song);
+        }
+
+        /// <summary>单击整行即播放；点右侧「＋」则加入播放队列。</summary>
+        private void OnItemClick(object sender, MouseButtonEventArgs e)
+        {
+            DependencyObject source = e.OriginalSource as DependencyObject;
+            if (FindAncestor<System.Windows.Controls.Primitives.ScrollBar>(source) != null) return;
+
+            ListBoxItem item = FindItem(source);
+            if (item == null) return;
+            Song song = item.DataContext as Song;
+            if (song == null) return;
+
+            if (FindAction(source, "add"))
+            {
+                main.Enqueue(song, false);
+                return;
+            }
+            main.PlaySong(song);
+        }
+
+        private void PlayAll()
+        {
+            List<Song> songs = main.VisibleSongs;
+            if (songs.Count == 0)
+            {
+                main.ShowToast("列表里还没有歌曲");
+                return;
+            }
+            main.PlayFrom(songs, 0);
+        }
+
+        private void ShuffleAll()
+        {
+            List<Song> songs = main.VisibleSongs;
+            if (songs.Count == 0)
+            {
+                main.ShowToast("列表里还没有歌曲");
+                return;
+            }
+            main.SetMode(PlayMode.Shuffle);
+            Random random = new Random();
+            main.PlayFrom(songs, random.Next(songs.Count));
+        }
+
+        private Button IconTextButton(string icon, string text, string styleKey, RoutedEventHandler click)
+        {
+            Button button = new Button();
+            button.Style = (Style)Application.Current.Resources[styleKey];
+            Canvas iconCanvas = Icons.Create(icon, 15, styleKey == "PrimaryButton" ? "OnAccent" : "TextDim");
+            TextBlock label = Ui.Text(text, 13, styleKey == "PrimaryButton" ? "OnAccent" : "Text");
+            label.Margin = new Thickness(7, 0, 0, 0);
+            button.Content = Ui.Row(0, iconCanvas, label);
+            button.Click += click;
+            return button;
+        }
+
+        private static bool FindAction(DependencyObject source, string tag)
+        {
+            while (source != null)
+            {
+                FrameworkElement element = source as FrameworkElement;
+                if (element != null && element.Tag != null && object.Equals(element.Tag, tag)) return true;
+                source = VisualTreeHelper.GetParent(source);
+            }
+            return false;
+        }
+
+        private static T FindAncestor<T>(DependencyObject source) where T : DependencyObject
+        {
+            while (source != null && !(source is T))
+            {
+                source = VisualTreeHelper.GetParent(source);
+            }
+            return source as T;
         }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
