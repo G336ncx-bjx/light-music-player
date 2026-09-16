@@ -35,6 +35,13 @@ namespace LightMusic
                 + " lyrics=" + (lyricsView.Lines.Count > 0 ? lyricsView.Lines.Count.ToString() : "-");
         }
 
+        /// <summary>冒烟测试：左下角状态文字（用于确认没有把令牌显示出来）。</summary>
+        public string SmokeStatusText()
+        {
+            return "status=" + (statusText == null ? "-" : statusText.Text)
+                + " | source=" + (dirLabel == null ? "-" : dirLabel.Text);
+        }
+
         public void LoadDemoForShot(string view, string lyricPath)
         {
             string[] titles = new string[]

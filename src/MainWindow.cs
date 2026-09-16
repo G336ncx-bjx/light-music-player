@@ -21,7 +21,7 @@ namespace LightMusic
     public partial class MainWindow : Window
     {
         public const string AppName = "轻音乐";
-        public const string AppVersion = "1.4.0";
+        public const string AppVersion = "1.4.1";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -41,6 +41,8 @@ namespace LightMusic
         private string searchText = string.Empty;
         private bool scanning;
         private bool uploading;
+        private string cloudRepoName = string.Empty;
+        private string cloudRepoId = string.Empty;
 
         private DispatcherTimer timer;
         private Forms.NotifyIcon tray;
@@ -527,6 +529,7 @@ namespace LightMusic
             {
                 try
                 {
+                    FetchRepoInfo(url);
                     ScanResult result = CloudLibrary.Scan(url, cache, hidden);
                     Dispatcher.BeginInvoke((Action)delegate { ApplyScan(result); });
                 }
@@ -540,6 +543,21 @@ namespace LightMusic
                     });
                 }
             });
+        }
+
+        /// <summary>令牌模式下取一次资料库名称与 ID（用于界面显示与「打开云盘」）。</summary>
+        private void FetchRepoInfo(string endpoint)
+        {
+            if (!CloudClient.IsApiToken(endpoint)) return;
+            try
+            {
+                CloudRepoInfo info = CloudClient.GetRepoInfo(endpoint);
+                cloudRepoName = info.Name;
+                cloudRepoId = info.RepoId;
+            }
+            catch (Exception)
+            {
+            }
         }
 
         /// <summary>后台补齐云盘歌曲的歌词与时长。</summary>
@@ -1220,9 +1238,20 @@ namespace LightMusic
             }
             if (dirLabel != null)
             {
-                dirLabel.Text = IsCloudSource
-                    ? (CanDeleteCloud ? "云盘（API 令牌）：" : "云盘（分享链接）：") + CloudEndpoint
-                    : settings.MusicDir;
+                if (!IsCloudSource)
+                {
+                    dirLabel.Text = settings.MusicDir;
+                }
+                else if (CanDeleteCloud)
+                {
+                    // 令牌模式不要显示令牌本身，只显示资料库名称
+                    dirLabel.Text = "云盘（API 令牌）："
+                        + (string.IsNullOrEmpty(cloudRepoName) ? "已连接" : cloudRepoName);
+                }
+                else
+                {
+                    dirLabel.Text = "云盘（分享链接）：" + settings.CloudUrl;
+                }
             }
         }
 
@@ -1883,7 +1912,24 @@ namespace LightMusic
             {
                 try
                 {
-                    System.Diagnostics.Process.Start(CloudClient.ShareUrl(CloudEndpoint));
+                    if (CanDeleteCloud)
+                    {
+                        // 令牌模式：直接打开资料库网页（需要 repo id，后台取一次）
+                        string host = CloudClient.ParseHost(CloudEndpoint);
+                        string repoId = cloudRepoId;
+                        if (string.IsNullOrEmpty(repoId))
+                        {
+                            FetchRepoInfo(CloudEndpoint);
+                            repoId = cloudRepoId;
+                        }
+                        System.Diagnostics.Process.Start(string.IsNullOrEmpty(repoId)
+                            ? host
+                            : host + "/library/" + repoId + "/");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Process.Start(CloudClient.ShareUrl(settings.CloudUrl));
+                    }
                 }
                 catch (Exception)
                 {

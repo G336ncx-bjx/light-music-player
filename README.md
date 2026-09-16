@@ -72,6 +72,8 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start
 两种都填在「设置 → 云端音乐」里，填了令牌就优先用令牌。**令牌等同密码**，只保存在本机设置里，请不要公开或提交到仓库；
 不想用了可以在网页版里删掉这个令牌。
 
+只填其中一个即可：只填令牌（分享链接留空）同样能列目录、播放、上传、删除，界面上也只会显示资料库名称而不会显示令牌明文。
+
 ## 桌面歌词
 
 ![桌面歌词](docs/screenshots/desktop-lyrics.png)

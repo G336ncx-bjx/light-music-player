@@ -185,6 +185,11 @@ namespace LightMusic
 
             Button test = Ui.Button("测试连接", "OutlineButton", delegate
             {
+                if (string.IsNullOrEmpty(cloudUrlBox.Text.Trim()))
+                {
+                    cloudStatus.Text = "分享链接为空；只填了 API 令牌的话可以直接点「检测令牌」";
+                    return;
+                }
                 cloudStatus.Text = "正在测试…";
                 main.TestCloudConnection(cloudUrlBox.Text, delegate(bool ok, string message)
                 {
@@ -288,9 +293,10 @@ namespace LightMusic
             StackPanel cacheRow = Ui.Row(12, cloudCacheCheck, cacheInfo, clearCache);
 
             TextBlock hint = Ui.Text(
-                "把云盘的分享链接（形如 https://cloud.tsinghua.edu.cn/d/xxxxxxxxxxxx/）粘贴到上面，"
-                + "保存后点「刷新列表」即可看到云端的歌：播放时会自动下载到本地缓存，"
-                + "下次播放同一首就是本地播放；也会自动预取队列里的下一首。",
+                "两种连接方式二选一即可：分享链接（形如 https://cloud.tsinghua.edu.cn/d/xxxxxxxxxxxx/）"
+                + "或下面那行 API 令牌，只填一个就能用；两个都填则以令牌为准，并可以直接删除云端文件。"
+                + "点「刷新列表」即可看到云端的歌：播放时自动下载到本地缓存，下次播放同一首就是本地播放，"
+                + "也会自动预取队列里的下一首。",
                 11.5, "TextMuted");
             hint.TextWrapping = TextWrapping.Wrap;
             hint.LineHeight = 20;

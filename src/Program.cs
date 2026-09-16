@@ -546,6 +546,7 @@ namespace LightMusic
                 {
                     timer.Stop();
                     Trace(trace, "state -> " + window.SmokeState());
+                    Trace(trace, "ui -> " + window.SmokeStatusText());
                     Trace(trace, "tick -> close");
                     window.Close();
                 };
