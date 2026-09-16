@@ -59,8 +59,9 @@ namespace Skylark
                 lrc.AppendLine("[00:" + (12 + i * 6).ToString("00") + ".00]" + demoLines[i]);
                 lrc.AppendLine("[00:" + (15 + i * 6).ToString("00") + ".00]" + demoLines[i] + "（副歌）");
             }
-            // 加上一句「同时间戳的译文」，用来验证外语歌的排版
-            lrc.AppendLine("[00:15.00]The little yellow flower (chorus)");
+            // 加上一句「同时间戳的译文」，用来验证外语歌的排版（放在靠后的位置，
+            // 这样截图时前面几秒显示的是「下一句预览」的排版）
+            lrc.AppendLine("[00:33.00]The little yellow flower (chorus)");
             File.WriteAllText(lyricPath, lrc.ToString(), new System.Text.UTF8Encoding(true));
 
             MainWindow window = new MainWindow();

@@ -4,14 +4,15 @@
     不依赖任何第三方库或运行时安装。
 #>
 param(
-    [switch]$Debug
+    [switch]$Debug,
+    [string]$OutDir
 )
 
 $ErrorActionPreference = 'Stop'
 
 $root  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src   = Join-Path $root 'src'
-$dist  = Join-Path $root 'dist'
+$dist  = if ($OutDir) { $OutDir } else { Join-Path $root 'dist' }
 $assets = Join-Path $root 'assets'
 $appName = 'Skylark'
 

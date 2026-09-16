@@ -209,8 +209,9 @@ namespace Skylark
         {
             AppSettings s = main.Settings;
             currentText.FontSize = s.LyricFontSize;
-            // 译文/下一句的字号在 UpdateNow 里按「有没有译文」决定
-            translationText.FontSize = Math.Max(12, s.LyricFontSize * 0.6);
+            // 译文/下一句的字号：这里也要按当前设置算好，
+            // 否则解锁（会重新 ApplySettings）时第二行会先缩一下、等下次刷新才恢复
+            ApplySecondaryFontSize();
 
             Color color;
             try
@@ -232,6 +233,15 @@ namespace Skylark
             UpdateLockVisual();
             ApplyVisualState();
             if (locked) ShowUnlockButton();
+        }
+
+        /// <summary>第二行（译文 / 下一句）的字号，统一按设置里的「下一句」选项算。</summary>
+        private void ApplySecondaryFontSize()
+        {
+            bool same = main.Settings.LyricNextLineMode == 2;
+            translationText.FontSize = same
+                ? currentText.FontSize
+                : Math.Max(16, currentText.FontSize * 0.78);
         }
 
         private void UpdateLockVisual()
@@ -286,12 +296,18 @@ namespace Skylark
             }
             else
             {
-                // 没有译文：按原来的方式显示下一句作为预览
-                translationText.Text = index + 1 < lines.Count ? lines[index + 1].Text : " ";
-                // 下一句要看得清：字号给到主行的 0.78，透明度也提上来
-                translationText.FontSize = Math.Max(16, currentText.FontSize * 0.78);
+                // 没有译文：显示下一句作为预览（按设置在 不显示 / 小一号 / 同样大小 之间选）
+                int nextMode = main.Settings.LyricNextLineMode;
+                if (nextMode == 0 || index + 1 >= lines.Count)
+                {
+                    translationText.Visibility = Visibility.Collapsed;
+                    return;
+                }
+                translationText.Text = lines[index + 1].Text;
+                // 默认和主行一样大，只靠字重与透明度区分，保证看得清
+                ApplySecondaryFontSize();
                 translationText.FontWeight = FontWeights.Normal;
-                translationText.Opacity = 0.85;
+                translationText.Opacity = nextMode == 2 ? 0.8 : 0.85;
                 translationText.Visibility = Visibility.Visible;
             }
         }
