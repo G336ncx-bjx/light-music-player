@@ -17,7 +17,6 @@ namespace Skylark
         private readonly Button headIndex = new Button();
         private readonly Button headTitle = new Button();
         private readonly Button headArtist = new Button();
-        private readonly Button headDuration = new Button();
         private readonly Border emptyState = new Border();
 
         public LibraryView(MainWindow owner)
@@ -68,17 +67,13 @@ namespace Skylark
             columns.ColumnDefinitions[1].Width = Ui.Stars(1);
             columns.ColumnDefinitions.Add(new ColumnDefinition());
             columns.ColumnDefinitions[2].Width = Ui.Px(190);
-            columns.ColumnDefinitions.Add(new ColumnDefinition());
-            columns.ColumnDefinitions[3].Width = Ui.Px(58);
 
             Style headerStyle = (Style)Application.Current.Resources["ColumnHeader"];
             SetupHeader(headIndex, "序号", headerStyle, SortField.Default);
             SetupHeader(headTitle, "歌曲", headerStyle, SortField.Title);
             SetupHeader(headArtist, "歌手", headerStyle, SortField.Artist);
-            SetupHeader(headDuration, "时长", headerStyle, SortField.Duration);
             headTitle.HorizontalContentAlignment = HorizontalAlignment.Left;
             headArtist.HorizontalContentAlignment = HorizontalAlignment.Left;
-            headDuration.HorizontalContentAlignment = HorizontalAlignment.Right;
             headIndex.HorizontalContentAlignment = HorizontalAlignment.Center;
 
             columns.Children.Add(headIndex);
@@ -86,8 +81,6 @@ namespace Skylark
             columns.Children.Add(headTitle);
             Grid.SetColumn(headArtist, 2);
             columns.Children.Add(headArtist);
-            Grid.SetColumn(headDuration, 3);
-            columns.Children.Add(headDuration);
 
             Grid.SetRow(columns, 1);
             root.Children.Add(columns);
@@ -163,7 +156,6 @@ namespace Skylark
             headIndex.Content = Ui.Text("序号" + (main.Settings.Sort == SortField.Default ? arrow : ""), 12, "TextMuted");
             headTitle.Content = Ui.Text("歌曲" + (main.Settings.Sort == SortField.Title ? arrow : ""), 12, "TextMuted");
             headArtist.Content = Ui.Text("歌手" + (main.Settings.Sort == SortField.Artist ? arrow : ""), 12, "TextMuted");
-            headDuration.Content = Ui.Text("时长" + (main.Settings.Sort == SortField.Duration ? arrow : ""), 12, "TextMuted");
             int i = 1;
             foreach (Song song in main.VisibleSongs) song.IndexText = (i++).ToString(CultureInfo.InvariantCulture);
         }
@@ -181,12 +173,9 @@ namespace Skylark
             list.ItemsSource = null;
             list.ItemsSource = songs;
 
-            double total = 0;
-            foreach (Song song in songs) total += song.Duration;
             string text = songs.Count.ToString(CultureInfo.InvariantCulture) + " 首";
             if (main.Library.Count != songs.Count)
                 text += "（共 " + main.Library.Count + " 首）";
-            if (total > 0) text += " · " + FormatTotal(total);
             summary.Text = text;
 
             bool empty = songs.Count == 0;

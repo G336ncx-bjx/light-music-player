@@ -38,10 +38,6 @@
                        Foreground="{DynamicResource TextDim}" TextTrimming="CharacterEllipsis"
                        VerticalAlignment="Center" Margin="0,0,12,0" />
 
-            <TextBlock Grid.Column="3" Text="{Binding DurationText}" FontSize="12.5"
-                       Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Right"
-                       VerticalAlignment="Center" />
-
         </Grid>
         <DataTemplate.Triggers>
             <DataTrigger Binding="{Binding HasLyrics}" Value="True">
@@ -63,7 +59,6 @@
                 <ColumnDefinition Width="40" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="180" />
-                <ColumnDefinition Width="58" />
                 <ColumnDefinition Width="36" />
             </Grid.ColumnDefinitions>
 
@@ -84,11 +79,7 @@
                        Foreground="{DynamicResource TextDim}" VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis" Margin="0,0,12,0" />
 
-            <TextBlock Grid.Column="3" Text="{Binding DurationText}" FontSize="12.5"
-                       Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Right"
-                       VerticalAlignment="Center" />
-
-            <Border x:Name="removeAction" Grid.Column="4" Style="{StaticResource RowAction}"
+            <Border x:Name="removeAction" Grid.Column="3" Style="{StaticResource RowAction}"
                     Tag="remove" Opacity="0.4" ToolTip="从播放队列移除"
                     HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Path Data="M6.6 6.6 L17.4 17.4 M17.4 6.6 L6.6 17.4" Stroke="{DynamicResource TextDim}"

@@ -112,9 +112,7 @@ namespace Skylark
             lyricsView.Load(currentSong);
             lyricsView.SetActive(view == "lyrics-late" ? 45 : 2);
 
-            double total = 0;
-            foreach (Song song in library) total += song.Duration;
-            statusText.Text = "云盘 · " + library.Count + " 首 · 已缓存 6 首 · " + Math.Round(total / 60) + " 分";
+            statusText.Text = "云盘 · " + library.Count + " 首 · 已缓存 6 首";
             dirLabel.Text = "云盘：" + (string.IsNullOrEmpty(settings.CloudUrl)
                 ? "https://cloud.tsinghua.edu.cn/d/xxxxxxxxxxxx/"
                 : settings.CloudUrl);

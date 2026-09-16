@@ -21,7 +21,7 @@ namespace Skylark
     public partial class MainWindow : Window
     {
         public const string AppName = "云雀";
-        public const string AppVersion = "3.2.10";
+        public const string AppVersion = "3.2.11";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -1242,8 +1242,6 @@ namespace Skylark
         public void UpdateStatusText()
         {
             if (statusText == null) return;
-            double total = 0;
-            foreach (Song s in library) total += s.Duration;
             if (IsCloudSource)
             {
                 int cached = 0;
@@ -1252,12 +1250,12 @@ namespace Skylark
                     if (CloudCache.CachedPath(s) != null) cached++;
                 }
                 statusText.Text = string.Format(CultureInfo.InvariantCulture,
-                    "云盘 · {0} 首 · 已缓存 {1} 首 · {2}", library.Count, cached, LongDuration(total));
+                    "云盘 · {0} 首 · 已缓存 {1} 首", library.Count, cached);
             }
             else
             {
                 statusText.Text = string.Format(CultureInfo.InvariantCulture,
-                    "共 {0} 首 · 时长 {1}", library.Count, LongDuration(total));
+                    "共 {0} 首", library.Count);
             }
             if (dirLabel != null)
             {
@@ -1594,7 +1592,8 @@ namespace Skylark
                     cmp = delegate(Song a, Song b) { return string.Compare(a.Artist, b.Artist, StringComparison.CurrentCulture); };
                     break;
                 case SortField.Duration:
-                    cmp = delegate(Song a, Song b) { return a.Duration.CompareTo(b.Duration); };
+                    // 时长已经不在界面上展示了，历史设置落到「按歌名」排序
+                    cmp = delegate(Song a, Song b) { return string.Compare(a.Title, b.Title, StringComparison.CurrentCulture); };
                     break;
                 default:
                     cmp = delegate(Song a, Song b) { return string.Compare(a.FileName, b.FileName, StringComparison.CurrentCulture); };

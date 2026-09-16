@@ -125,19 +125,7 @@ namespace Skylark
                 count++;
                 try
                 {
-                    if (song.Duration <= 0)
-                    {
-                        int probe = Math.Min(512 * 1024, song.Size > 0 ? (int)song.Size : 512 * 1024);
-                        byte[] head = CloudClient.DownloadHead(urlOrToken, song.CloudPath, probe);
-                        double duration = DurationReader.ReadBytes(head, song.Size,
-                            Path.GetExtension(song.FileName));
-                        if (duration > 0)
-                        {
-                            song.Duration = duration;
-                            if (onUpdated != null) onUpdated(song);
-                        }
-                    }
-
+                    // 时长不再探测（界面上不显示了，还能省下每首 512KB 的流量）
                     if (song.LyricText == null && !string.IsNullOrEmpty(song.LyricPath))
                     {
                         string lrcPath = song.LyricPath.Substring((PseudoScheme + CloudClient.ParseToken(urlOrToken)).Length);

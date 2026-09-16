@@ -159,6 +159,7 @@ public class PlayerService extends Service {
         session.setActive(true);
         registerBecomingNoisy();
         updateNotification();
+        handler.postDelayed(uiTick, 2000);
     }
 
     @Override
@@ -198,6 +199,7 @@ public class PlayerService extends Service {
         instance = null;
         saveState();
         pruneCache();
+        handler.removeCallbacks(uiTick);
         if (session != null) {
             session.setActive(false);
             session.release();
@@ -741,7 +743,9 @@ public class PlayerService extends Service {
         Song song = Store.current();
         String title = song == null ? "云雀" : song.title;
         String text = song == null ? "还没有播放歌曲" : song.artistText();
-        if (buffering) text = bufferingText.length() > 0 ? bufferingText : "正在缓冲…";
+        // 只有「还在准备、还没出声」时才显示缓冲提示，而且不带百分比：
+        // 百分比只在界面里滚动显示，通知栏一旦停在某个数字上就再也不会变。
+        if (buffering && !playing) text = "正在缓冲…";
 
         Intent open = new Intent(this, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -777,6 +781,7 @@ public class PlayerService extends Service {
 
     private void updateNotification() {
         Notification n = buildNotification();
+        lastNotifyText = n.extras.getString(Notification.EXTRA_TEXT);
         try {
             startForeground(NOTIFY_ID, n);
         } catch (Exception e) {
@@ -784,6 +789,24 @@ public class PlayerService extends Service {
         }
         updateSession();
     }
+
+    /** 上一次发出去的通知文案，用来避免每秒重复刷通知。 */
+    private String lastNotifyText = "";
+
+    /**
+     * 每 2 秒把「锁屏 / 通知栏」的状态对齐一次：
+     * 更新播放进度（锁屏进度条），并且只要文案和上次不同就重发通知——
+     * 这样即使某个状态变化漏了刷新，也会在 2 秒内自愈，不会卡在「正在缓冲 90%」。
+     */
+    private final Runnable uiTick = new Runnable() {
+        public void run() {
+            updateSession();
+            Notification n = buildNotification();
+            String text = n.extras.getString(Notification.EXTRA_TEXT);
+            if (text != null && !text.equals(lastNotifyText)) updateNotification();
+            handler.postDelayed(this, 2000);
+        }
+    };
 
     private void updateSession() {
         if (session == null) return;
