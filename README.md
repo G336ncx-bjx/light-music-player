@@ -185,3 +185,4 @@ dist\LightMusic.exe --cloudtest <令牌或分享链接>
 - 只有**功能级改动**（用户能感知的新能力或修复）才会打 `v*` 标签并发布 Release；
 - 工具类、内部重构、命令行的改动只推送到 `main`（CI 依旧会构建 + 跑自检），版本号保持不变；
 - 主版本号只在出现不兼容变更时提升，尽量保持「一个版本对应一次有意义的交付」。
+- 需要比 Release 更新的构建时：打开 [Actions](https://github.com/G336ncx-bjx/light-music-player/actions/workflows/ci.yml) 里最新一次成功的 CI，下载 `LightMusic-dev` 产物即可（每次推送都会重新构建并跑一遍自检）。
