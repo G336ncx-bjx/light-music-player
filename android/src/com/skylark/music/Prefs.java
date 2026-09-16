@@ -44,8 +44,14 @@ public class Prefs {
 
     // ---------- 缓存 ----------
 
-    public static boolean cacheEnabled(Context c) { return sp(c).getBoolean("cache", true); }
-    public static void setCacheEnabled(Context c, boolean v) { sp(c).edit().putBoolean("cache", v).apply(); }
+    /** 默认不缓存：直接从云端播放，不在手机里留文件。 */
+    /** 本地占用策略：0 完全不落地（默认） / 2 听过的歌都留在本机。 */
+    public static int cacheMode(Context c) {
+        int mode = sp(c).getInt("cacheMode", 0);
+        return mode == 2 ? 2 : 0;
+    }
+
+    public static void setCacheMode(Context c, int v) { sp(c).edit().putInt("cacheMode", v).apply(); }
 
     // ---------- 播放 ----------
 

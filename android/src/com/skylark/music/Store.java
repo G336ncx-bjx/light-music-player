@@ -7,22 +7,32 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** 全局状态：音乐库、播放队列、播放模式、缓存目录。 */
 public class Store {
+    /** 本地占用策略：默认完全不落地，打开缓存才把听过的歌留在本机。 */
+    public static final int CACHE_NONE = 0;    // 只在内存里缓冲，硬盘上不留音频
+    public static final int CACHE_ALL = 2;     // 听过的歌都留在本机（可离线播放）
+
     public static final List<Song> songs = new ArrayList<Song>();
     public static final List<Song> queue = new ArrayList<Song>();
     public static int index = -1;
     public static int mode = 1;          // 0 顺序 1 列表循环 2 单曲循环 3 随机
     public static String endpoint = "";
-    public static boolean cacheEnabled = true;
+    public static int cacheMode = CACHE_NONE;
     public static String repoLabel = "";
     public static int skippedUnsupported = 0;
     public static boolean scanning = false;
     public static String status = "";
+
+    /** 时长与歌词偏移放在内存里，避免列表每画一行都去解析一次 JSON。 */
+    private static final Map<String, Double> durations = new HashMap<String, Double>();
+    private static final Map<String, Double> lyricOffsets = new HashMap<String, Double>();
 
     public static Song current() {
         if (index < 0 || index >= queue.size()) return null;
@@ -46,10 +56,24 @@ public class Store {
         return "列表循环";
     }
 
+    /** 听过的歌都留着（可离线播放）。 */
+    public static boolean cacheAll() {
+        return cacheMode == CACHE_ALL;
+    }
+
+    /** 是否预取下一首：只有缓存模式下才值得占本地空间。 */
+    public static boolean prefetchEnabled() {
+        return cacheAll();
+    }
+
     public static void load(Context c) {
         endpoint = Prefs.endpoint(c);
         mode = Prefs.mode(c);
-        cacheEnabled = Prefs.cacheEnabled(c);
+        cacheMode = Prefs.cacheMode(c);
+        durations.clear();
+        lyricOffsets.clear();
+        loadTable(c, "durations", durations);
+        loadTable(c, "lyricOffsets", lyricOffsets);
         queue.clear();
         try {
             JSONArray arr = new JSONArray(Prefs.queue(c));
@@ -69,6 +93,16 @@ public class Store {
         for (int i = 0; i < queue.size(); i++) arr.put(queue.get(i).toJson());
         Prefs.setQueue(c, arr.toString());
         Prefs.setQueueIndex(c, index);
+    }
+
+    private static void loadTable(Context c, String key, Map<String, Double> target) {
+        JSONObject table = Prefs.table(c, key);
+        java.util.Iterator<String> keys = table.keys();
+        while (keys.hasNext()) {
+            String name = keys.next();
+            double value = table.optDouble(name, 0);
+            if (value != 0) target.put(name, Double.valueOf(value));
+        }
     }
 
     /** 缓存文件名：<歌名>.<路径哈希>.<扩展名>。 */
@@ -93,21 +127,31 @@ public class Store {
     // ---------- 按歌曲记的小数据：时长、歌词偏移 ----------
 
     public static double durationOf(Context c, Song song) {
-        return Prefs.tableDouble(c, "durations", song.cloudPath, 0);
+        if (song == null) return 0;
+        if (durations.containsKey(song.cloudPath)) return durations.get(song.cloudPath).doubleValue();
+        double value = Prefs.tableDouble(c, "durations", song.cloudPath, 0);
+        if (value > 0) durations.put(song.cloudPath, Double.valueOf(value));
+        return value;
     }
 
     public static void setDuration(Context c, Song song, double seconds) {
         if (seconds <= 0) return;
         song.duration = seconds;
+        durations.put(song.cloudPath, Double.valueOf(seconds));
         Prefs.putTableDouble(c, "durations", song.cloudPath, seconds);
     }
 
     public static double lyricOffset(Context c, Song song) {
-        return song == null ? 0 : Prefs.tableDouble(c, "lyricOffsets", song.cloudPath, 0);
+        if (song == null) return 0;
+        if (lyricOffsets.containsKey(song.cloudPath)) return lyricOffsets.get(song.cloudPath).doubleValue();
+        double value = Prefs.tableDouble(c, "lyricOffsets", song.cloudPath, 0);
+        if (value != 0) lyricOffsets.put(song.cloudPath, Double.valueOf(value));
+        return value;
     }
 
     public static void setLyricOffset(Context c, Song song, double seconds) {
         if (song == null) return;
+        lyricOffsets.put(song.cloudPath, Double.valueOf(seconds));
         Prefs.putTableDouble(c, "lyricOffsets", song.cloudPath, seconds);
     }
 
@@ -146,17 +190,11 @@ public class Store {
     }
 
     public static long cacheSize(Context c) {
-        long total = 0;
-        File[] files = cacheDir(c).listFiles();
-        if (files != null) {
-            for (int i = 0; i < files.length; i++) total += files[i].length();
-        }
-        return total;
+        return sizeOf(cacheDir(c));
     }
 
     public static int cacheCount(Context c) {
-        File[] files = cacheDir(c).listFiles();
-        return files == null ? 0 : files.length;
+        return countOf(cacheDir(c));
     }
 
     public static void clearCache(Context c) {
@@ -170,6 +208,26 @@ public class Store {
             if (files[i].isDirectory()) deleteInside(files[i]);
             files[i].delete();
         }
+    }
+
+    private static long sizeOf(File dir) {
+        File[] files = dir == null ? null : dir.listFiles();
+        if (files == null) return 0;
+        long total = 0;
+        for (int i = 0; i < files.length; i++) {
+            total += files[i].isDirectory() ? sizeOf(files[i]) : files[i].length();
+        }
+        return total;
+    }
+
+    private static int countOf(File dir) {
+        File[] files = dir == null ? null : dir.listFiles();
+        if (files == null) return 0;
+        int total = 0;
+        for (int i = 0; i < files.length; i++) {
+            total += files[i].isDirectory() ? countOf(files[i]) : 1;
+        }
+        return total;
     }
 
     private static String hash(String text) {

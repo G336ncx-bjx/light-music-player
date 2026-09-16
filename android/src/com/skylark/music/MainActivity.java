@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.1.0";
+    public static final String VERSION = "3.2.0";
 
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma" };
     private static final String[] IGNORED_EXT = { "flac", "ogg", "opus", "ape", "wv", "aif", "aiff", "mp4", "mkv", "avi", "m4v" };
@@ -108,6 +108,7 @@ public class MainActivity extends Activity {
     private Switch cacheSwitch;
     private TextView connInfo, cacheInfo, hiddenInfo;
     private final TextView[] themeButtons = new TextView[3];
+    private TextView cacheModeHint;
 
     // 底部播放条
     private TextView nowTitle, nowArtist, timeNow, timeTotal, modeText;
@@ -134,7 +135,7 @@ public class MainActivity extends Activity {
         selectTab(lastTab);
         refreshQueue();
         refreshSettings();
-        syncCacheSwitch();
+        updateCacheButtons();
 
         startPlayerService();
         requestNotificationPermission();
@@ -519,7 +520,7 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-        libAdapter = new SongAdapter();
+        libAdapter = new SongAdapter(false);
         libList.setAdapter(libAdapter);
         page.addView(libList);
         return page;
@@ -796,7 +797,7 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-        queueAdapter = new SongAdapter();
+        queueAdapter = new SongAdapter(true);
         queueList.setAdapter(queueAdapter);
         page.addView(queueList);
         return page;
@@ -1194,21 +1195,21 @@ public class MainActivity extends Activity {
 
         // 播放与缓存
         LinearLayout play = card();
-        play.addView(cardTitle("播放与缓存"));
+        play.addView(cardTitle("本地占用与缓存"));
         cacheSwitch = new Switch(this);
-        cacheSwitch.setText("缓存歌曲到本机（听过的歌可离线播放）");
+        cacheSwitch.setText("把听过的歌缓存到本机（可离线播放）");
         cacheSwitch.setTextSize(14);
         cacheSwitch.setTextColor(cText);
-        cacheSwitch.setChecked(Prefs.cacheEnabled(this));
+        cacheSwitch.setChecked(Store.cacheAll());
         cacheSwitch.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                boolean on = cacheSwitch.isChecked();
-                Prefs.setCacheEnabled(MainActivity.this, on);
-                Store.cacheEnabled = on;
-                toast(on ? "已开启缓存" : "已关闭缓存（每次播放都走网络）");
+                applyCacheMode(cacheSwitch.isChecked() ? Store.CACHE_ALL : Store.CACHE_NONE);
             }
         });
         play.addView(cacheSwitch);
+        cacheModeHint = text("", 12, cDim);
+        cacheModeHint.setPadding(0, dp(8), 0, 0);
+        play.addView(cacheModeHint);
         LinearLayout cacheRow = row();
         LinearLayout.LayoutParams cacheRowP = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1308,8 +1309,32 @@ public class MainActivity extends Activity {
         hiddenInfo.setText(hidden.isEmpty() ? "没有隐藏的歌曲。"
                 : "音乐库里隐藏了 " + hidden.size() + " 首（文件还在云盘上）。");
         updateCacheInfo();
+        updateCacheButtons();
         updateConnInfo();
         updateThemeButtons();
+    }
+
+    private void applyCacheMode(int mode) {
+        Prefs.setCacheMode(this, mode);
+        Store.cacheMode = mode;
+        updateCacheButtons();
+        toast(mode == Store.CACHE_ALL
+                ? "已开启缓存：听过的歌都会留在本机"
+                : "已关闭缓存：只在线播放，硬盘上不留音频文件");
+        PlayerService service = PlayerService.instance;
+        if (service != null) service.pruneNow();
+        updateCacheInfo();
+    }
+
+    private void updateCacheButtons() {
+        boolean caching = Store.cacheAll();
+        if (cacheSwitch != null) cacheSwitch.setChecked(caching);
+        if (cacheModeHint != null) {
+            cacheModeHint.setText(caching
+                    ? "已开启：听过的歌都留在本机，可以离线播放；占的空间会随听过的歌增加，"
+                            + "随时可以点「清除缓存」清掉。"
+                    : "默认关闭：播放时只在内存里缓冲，硬盘上不留音频文件，每次听歌都要联网。");
+        }
     }
 
     private void updateCacheInfo() {
@@ -1433,10 +1458,6 @@ public class MainActivity extends Activity {
                     }
                 })
                 .show();
-    }
-
-    private void syncCacheSwitch() {
-        if (cacheSwitch != null) cacheSwitch.setChecked(Prefs.cacheEnabled(this));
     }
 
     // ---------------------------------------------------------------- 扫描云盘
@@ -1814,12 +1835,15 @@ public class MainActivity extends Activity {
         seek.setProgress(0);
         seek.setProgressDrawable(progressDrawable());
         seek.setThumb(thumbDrawable());
+        seek.setSplitTrack(false);
+        seek.setMinimumHeight(dp(34));
         LinearLayout.LayoutParams seekP = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         seekP.leftMargin = dp(6);
         seekP.rightMargin = dp(6);
         seek.setLayoutParams(seekP);
-        seek.setPadding(dp(6), dp(6), dp(6), dp(6));
+        // 左右留出圆点的位置，否则滑到两端会被切掉
+        seek.setPadding(dp(9), dp(12), dp(9), dp(12));
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
                 if (!fromUser) return;
@@ -1895,15 +1919,18 @@ public class MainActivity extends Activity {
     private Drawable progressDrawable() {
         GradientDrawable track = new GradientDrawable();
         track.setColor(cTrack);
-        track.setCornerRadius(dp(3));
-        track.setSize(-1, dp(5));
+        track.setCornerRadius(dp(4));
+        track.setSize(-1, dp(8));
         GradientDrawable fill = new GradientDrawable();
         fill.setColor(cAccent);
-        fill.setCornerRadius(dp(3));
-        fill.setSize(-1, dp(5));
+        fill.setCornerRadius(dp(4));
+        fill.setSize(-1, dp(8));
         LayerDrawable layer = new LayerDrawable(new Drawable[] { track, fill });
         layer.setId(0, android.R.id.background);
         layer.setId(1, android.R.id.progress);
+        // 槽与已播放部分用同样的上下内缩，保证两端对齐（14 = 18dp 圆点 - 4dp 轨道）
+        layer.setLayerInset(0, 0, dp(7), 0, dp(7));
+        layer.setLayerInset(1, 0, dp(7), 0, dp(7));
         return layer;
     }
 
@@ -1911,7 +1938,8 @@ public class MainActivity extends Activity {
         GradientDrawable thumb = new GradientDrawable();
         thumb.setShape(GradientDrawable.OVAL);
         thumb.setColor(cAccent);
-        thumb.setSize(dp(14), dp(14));
+        thumb.setStroke(dp(2), cSurface);
+        thumb.setSize(dp(18), dp(18));
         return thumb;
     }
 
@@ -1992,6 +2020,12 @@ public class MainActivity extends Activity {
 
     private class SongAdapter extends BaseAdapter {
         private final List<Song> data = new ArrayList<Song>();
+        /** 音乐库列表不高亮正在播放的那首（那是播放队列的事）。 */
+        private final boolean highlightCurrent;
+
+        SongAdapter(boolean highlightCurrent) {
+            this.highlightCurrent = highlightCurrent;
+        }
 
         void setData(List<Song> source) {
             data.clear();
@@ -2015,7 +2049,7 @@ public class MainActivity extends Activity {
             RowHolder holder = (RowHolder) view.getTag();
             Song song = data.get(position);
             Song current = Store.current();
-            boolean active = current != null && current.cloudPath.equals(song.cloudPath);
+            boolean active = highlightCurrent && current != null && current.cloudPath.equals(song.cloudPath);
             holder.index.setText(String.valueOf(position + 1));
             holder.index.setTextColor(active ? cAccent : cDim);
             holder.title.setText(song.title);

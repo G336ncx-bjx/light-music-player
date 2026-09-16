@@ -15,6 +15,7 @@ import android.media.MediaMetadata;
 import android.media.MediaPlayer;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -24,8 +25,12 @@ import android.os.PowerManager;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * 播放服务：MediaPlayer + 通知栏控制 + 锁屏/耳机按键（MediaSession）。
@@ -63,6 +68,10 @@ public class PlayerService extends Service {
     private Thread workThread;
     private int playToken;
     private boolean becomingNoisyRegistered;
+    /** 当前是不是在线直连播放（不是本地缓存文件）。 */
+    private boolean streaming;
+    /** 在线播放失败后是否已经试过「下载再播」。 */
+    private boolean fallbackTried;
 
     private final BroadcastReceiver becomingNoisy = new BroadcastReceiver() {
         @Override
@@ -91,6 +100,7 @@ public class PlayerService extends Service {
         super.onCreate();
         instance = this;
         Store.load(this);
+        pruneCache();
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         createChannel();
@@ -118,7 +128,22 @@ public class PlayerService extends Service {
             public boolean onError(MediaPlayer mp, int what, int extra) {
                 playing = false;
                 prepared = false;
-                Store.status = "播放失败（" + what + "/" + extra + "）";
+                Song song = Store.current();
+                if (streaming && !fallbackTried && song != null && Store.cacheAll()) {
+                    // 有些网络环境直连 HTTP 流会失败，缓存模式下退回「先下载再播」
+                    fallbackTried = true;
+                    streaming = false;
+                    downloadThenPlay(song, 0);
+                    return true;
+                }
+                if (streaming && song != null) {
+                    Store.status = "在线播放失败：当前设置为不落地，没有下载到本机。"
+                            + "可以在「设置 → 本地占用与缓存」里打开缓存再试。";
+                } else {
+                    Store.status = "播放失败（" + what + "/" + extra + "）";
+                }
+                clearBuffering();
+                updateNotification();
                 notifyChanged();
                 return true;
             }
@@ -192,6 +217,7 @@ public class PlayerService extends Service {
     public void onDestroy() {
         instance = null;
         saveState();
+        pruneCache();
         if (session != null) {
             session.setActive(false);
             session.release();
@@ -429,27 +455,97 @@ public class PlayerService extends Service {
     // ---------- 播放内核 ----------
 
     private void beginPlay(final Song song, final double startAt) {
-        String endpoint = Store.endpoint;
+        final String endpoint = Store.endpoint;
         if (endpoint.length() == 0) {
             Store.status = "请先在设置里填云盘链接或令牌";
             notifyChanged();
             return;
         }
-        File cached = Store.cacheFile(this, song);
+        fallbackTried = false;
+        final File target = Store.cacheFile(this, song);
         if (Store.isCached(this, song)) {
-            openFile(cached, startAt);
+            // 已经在本机（多半是上一首时预取好的）→ 直接播，切歌几乎没等待
+            streaming = false;
+            clearBuffering();
+            openFile(target, startAt);
             prefetchNext();
             return;
         }
-        // 需要先下载
+        if (Store.cacheAll()) {
+            // 「把听过的歌都留在本机」：先下好再播，以后都是本地播放
+            downloadThenPlay(song, startAt);
+            prefetchNext();
+            return;
+        }
+        // 默认（不落地）：直接在线播，不在本机留音频文件
         buffering = true;
-        bufferingText = "正在缓冲… 0%";
-        Store.status = "正在缓冲：" + song.title;
+        bufferingText = "正在缓冲…";
+        Store.status = "正在连接云端：" + song.title;
         updateNotification();
         notifyChanged();
         final int token = playToken;
-        final File target = cached;
         workThread = new Thread(new Runnable() {
+            public void run() {
+                try {
+                    // 令牌模式要现取一次下载地址，所以这一步必须在后台线程
+                    final String url = Cloud.downloadUrl(endpoint, song.cloudPath);
+                    if (token != playToken) return;
+                    handler.post(new Runnable() {
+                        public void run() {
+                            if (token != playToken) return;
+                            openUrl(url, startAt);
+                        }
+                    });
+                } catch (final IOException e) {
+                    handler.post(new Runnable() {
+                        public void run() {
+                            if (token != playToken) return;
+                            clearBuffering();
+                            Store.status = "连接云端失败：" + Util.shorten(e.getMessage());
+                            updateNotification();
+                            notifyChanged();
+                        }
+                    });
+                }
+            }
+        });
+        workThread.setDaemon(true);
+        workThread.start();
+        prefetchNext();
+    }
+
+    /** 直接播云端地址（服务端支持 Range，所以拖动进度条也能用）。 */
+    private void openUrl(final String url, final double startAt) {
+        try {
+            prepared = false;
+            player.reset();
+            streaming = true;
+            Map<String, String> headers = new HashMap<String, String>();
+            headers.put("User-Agent", Util.UA);
+            player.setDataSource(this, Uri.parse(url), headers);
+            pendingSeek = startAt;
+            player.prepareAsync();
+            requestFocus();
+            updateNotification();
+            notifyChanged();
+        } catch (Exception e) {
+            clearBuffering();
+            Store.status = "无法在线播放：" + Util.shorten(e.getMessage());
+            notifyChanged();
+        }
+    }
+
+    /** 在线播放失败时退一步：整首下载到临时文件再播（播完/切歌会清掉）。 */
+    private void downloadThenPlay(final Song song, final double startAt) {
+        final String endpoint = Store.endpoint;
+        final int token = playToken;
+        final File target = Store.cacheFile(this, song);
+        buffering = true;
+        bufferingText = "正在缓冲…";
+        Store.status = "在线播放不成功，改为下载后播放…";
+        updateNotification();
+        notifyChanged();
+        Thread t = new Thread(new Runnable() {
             public void run() {
                 try {
                     Cloud.download(endpoint, song.cloudPath, target, new Util.Progress() {
@@ -469,18 +565,15 @@ public class PlayerService extends Service {
                     handler.post(new Runnable() {
                         public void run() {
                             if (token != playToken) return;
-                            buffering = false;
-                            bufferingText = "";
+                            clearBuffering();
                             openFile(target, startAt);
-                            prefetchNext();
                         }
                     });
                 } catch (final IOException e) {
                     handler.post(new Runnable() {
                         public void run() {
                             if (token != playToken) return;
-                            buffering = false;
-                            bufferingText = "";
+                            clearBuffering();
                             Store.status = "下载失败：" + Util.shorten(e.getMessage());
                             updateNotification();
                             notifyChanged();
@@ -489,13 +582,19 @@ public class PlayerService extends Service {
                 }
             }
         });
-        workThread.setDaemon(true);
-        workThread.start();
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void clearBuffering() {
+        buffering = false;
+        bufferingText = "";
     }
 
     private void openFile(final File file, final double startAt) {
         try {
             prepared = false;
+            streaming = false;
             player.reset();
             player.setDataSource(file.getAbsolutePath());
             player.prepareAsync();
@@ -512,6 +611,8 @@ public class PlayerService extends Service {
     private double pendingSeek = 0;
 
     private void startPlaybackFromPrepared() {
+        // 在线播放时缓冲状态要在准备好之后立刻清掉，否则界面会一直显示「正在缓冲」
+        clearBuffering();
         if (pendingSeek > 0) {
             player.seekTo((int) (pendingSeek * 1000));
             pendingSeek = 0;
@@ -543,26 +644,72 @@ public class PlayerService extends Service {
     }
 
     /** 播放时顺带把下一首下载好。 */
+    /** 预取「下一首」：切歌时直接本地播放，几乎没有等待；顺带清掉多余的本地文件。 */
     private void prefetchNext() {
-        if (!Store.cacheEnabled) return;
+        pruneCache();
+        if (!Store.prefetchEnabled()) return;
         if (Store.queue.size() <= 1 || Store.endpoint.length() == 0) return;
-        int at = Store.index + 1;
-        if (at >= Store.queue.size()) at = 0;
-        final Song s = Store.queue.get(at);
-        if (Store.isCached(this, s)) return;
+        final Song s = nextSong();
+        if (s == null || Store.isCached(this, s)) return;
         final String endpoint = Store.endpoint;
         Thread t = new Thread(new Runnable() {
             public void run() {
+                File target = Store.cacheFile(PlayerService.this, s);
                 try {
-                    Cloud.download(endpoint, s.cloudPath, Store.cacheFile(PlayerService.this, s), null);
+                    Cloud.download(endpoint, s.cloudPath, target, null);
                     probeDuration(s);
+                    handler.post(new Runnable() {
+                        public void run() {
+                            pruneCache();
+                        }
+                    });
                 } catch (Exception e) {
-                    // 预取失败无所谓
+                    if (target.exists()) target.delete();
                 }
             }
         });
         t.setDaemon(true);
         t.start();
+    }
+
+    /** 按当前播放模式算下一首（顺序播放到底就是没有）。 */
+    private Song nextSong() {
+        if (Store.queue.isEmpty()) return null;
+        if (Store.mode == 3) {
+            if (Store.queue.size() <= 1) return null;
+            return Store.queue.get(randomIndex());
+        }
+        int at = Store.index + 1;
+        if (at >= Store.queue.size()) {
+            if (Store.mode == 0) return null;
+            at = 0;
+        }
+        if (at == Store.index) return null;
+        return Store.queue.get(at);
+    }
+
+    /**
+     * 空间策略：没开缓存时，本机不留任何音频文件（歌词和正在下载的 .part 除外）；
+     * 打开「把听过的歌都留在本机」后才会保留全部。
+     */
+    private void pruneCache() {
+        if (Store.cacheAll()) return;
+        File dir = Store.cacheDir(this);
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (int i = 0; i < files.length; i++) {
+            File f = files[i];
+            if (f.isDirectory()) continue;         // lyrics/ 留着
+            String name = f.getName();
+            if (name.endsWith(".part")) continue;  // 正在下载的临时文件
+            f.delete();
+        }
+    }
+
+    /** 设置里换本地占用策略后，立刻按新策略清一遍。 */
+    public void pruneNow() {
+        pruneCache();
+        notifyChanged();
     }
 
     /** 取前 256KB 解析 MP3 时长。 */
