@@ -370,7 +370,7 @@ namespace Skylark
             SortAscending = true;
             LyricFontSize = 34;
             LyricPageFontSize = 16;
-            LyricNextLineMode = 2;
+            LyricNextLineMode = 1;
             LyricShadowMode = 1;
             LyricColor = "#FFFFFF";
             LyricOpacity = 1.0;

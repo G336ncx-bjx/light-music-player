@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Threading;
 
@@ -23,7 +24,6 @@ namespace Skylark
         private readonly Border frame = new Border();
         private readonly TextBlock currentText = new TextBlock();
         private readonly TextBlock translationText = new TextBlock();
-        private readonly TextBlock nextText = new TextBlock();
         private readonly Border toolbar = new Border();
         private readonly TextBlock hintText = new TextBlock();
         private readonly Button lockButton = new Button();
@@ -237,7 +237,7 @@ namespace Skylark
             bool same = main.Settings.LyricNextLineMode == 2;
             translationText.FontSize = same
                 ? currentText.FontSize
-                : Math.Max(16, currentText.FontSize * 0.78);
+                : Math.Max(18, currentText.FontSize * 0.84);
         }
 
         /// <summary>文字描边（阴影）：0 关 / 1 弱 / 2 强。锁定时没有底色，全靠它保证看得清。</summary>
@@ -281,7 +281,7 @@ namespace Skylark
             Song song = main.CurrentSong;
             if (song == null)
             {
-                currentText.Text = "未在播放";
+                SetCurrentText("未在播放");
                 translationText.Text = " ";
                 translationText.Visibility = Visibility.Visible;
                 return;
@@ -293,7 +293,7 @@ namespace Skylark
 
             if (lines == null || lines.Count == 0)
             {
-                currentText.Text = song.Title;
+                SetCurrentText(song.Title);
                 translationText.Text = " ";
                 translationText.Visibility = Visibility.Visible;
                 return;
@@ -301,13 +301,13 @@ namespace Skylark
 
             if (index < 0)
             {
-                currentText.Text = song.Title;
+                SetCurrentText(song.Title);
                 translationText.Text = " ";
                 translationText.Visibility = Visibility.Visible;
                 return;
             }
 
-            currentText.Text = lines[index].Text;
+            SetCurrentText(lines[index].Text);
             if (!string.IsNullOrEmpty(lines[index].Translation) && main.Settings.LyricShowTranslation)
             {
                 // 有译文：只显示这一句（原文在上、译文在下，同样大小）
@@ -327,14 +327,31 @@ namespace Skylark
                     return;
                 }
                 translationText.Text = lines[index + 1].Text;
-                // 默认和主行一样大，只靠字重与透明度区分，保证看得清
+                // 两句亮度一致（不压暗），靠字号 + 当前句下面那条短条区分主次
                 ApplySecondaryFontSize();
-                // 字重和当前句一致：大字号下 Normal 的中文字形太细，看着像没写清楚
-                translationText.FontWeight = nextMode == 2 ? FontWeights.SemiBold : FontWeights.Normal;
-                // 同样大小时不再压暗：压暗会在深色桌面上显得「更黑」而不是「更淡」
-                translationText.Opacity = nextMode == 2 ? 1.0 : 0.9;
+                // 字重都用 SemiBold：Normal 在大字号下中文字形太细，看着像没写清楚
+                translationText.FontWeight = FontWeights.SemiBold;
+                translationText.Opacity = 1.0;
                 translationText.Visibility = Visibility.Visible;
             }
+        }
+
+        /// <summary>
+        /// 设置当前句文本；换句时给一个 240ms 的淡入 + 轻微放大，
+        /// 让人一眼看出「刚跳到哪一行」，而不用把另外一行压暗。
+        /// </summary>
+        private void SetCurrentText(string text)
+        {
+            if (currentText.Text == text) return;
+            currentText.Text = text;
+            ScaleTransform scale = new ScaleTransform(1, 1);
+            currentText.RenderTransformOrigin = new Point(0.5, 0.5);
+            currentText.RenderTransform = scale;
+            DoubleAnimation fade = new DoubleAnimation(0.35, 1.0, TimeSpan.FromMilliseconds(240));
+            DoubleAnimation grow = new DoubleAnimation(0.94, 1.0, TimeSpan.FromMilliseconds(240));
+            currentText.BeginAnimation(OpacityProperty, fade);
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
         }
 
         /// <summary>短暂提示（例如「已锁定」）。</summary>
