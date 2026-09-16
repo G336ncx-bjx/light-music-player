@@ -32,7 +32,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
           Copy-Item .\dist\LightMusic.exe .\release\LightMusic.exe
-          Copy-Item .\README.md .\release\使用说明.md
+          Copy-Item .\README.md .\release\README.md
           Compress-Archive -Path .\release\* -DestinationPath .\LightMusic-win-x64.zip -Force
 
       - name: Upload artifacts
