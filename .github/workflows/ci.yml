@@ -33,12 +33,15 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
         run: |
+          # NOTE: keep this block ASCII-only. Windows PowerShell 5.1 reads the
+          # generated temp script with the ANSI code page, so non-ASCII text
+          # here breaks the parser.
           if ($env:KEYSTORE_BASE64) {
             [IO.File]::WriteAllBytes("$PWD\android\skylark.jks", [Convert]::FromBase64String($env:KEYSTORE_BASE64))
             [IO.File]::WriteAllText("$PWD\android\keystore.pass", $env:KEYSTORE_PASS)
-            Write-Output '签名：使用仓库密钥（与正式版一致）'
+            Write-Output 'signing: using the repository keystore (same as releases)'
           } else {
-            Write-Output '签名：未配置 ANDROID_KEYSTORE_BASE64，本次用临时密钥（仅供测试，不能覆盖安装正式版）'
+            Write-Output 'signing: ANDROID_KEYSTORE_BASE64 is not set, a throwaway key will be generated (test only)'
           }
 
       - name: Build Android APK

@@ -33,12 +33,14 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
         run: |
+          # NOTE: keep this block ASCII-only (PowerShell 5.1 reads the temp
+          # script with the ANSI code page).
           if (-not $env:KEYSTORE_BASE64 -or -not $env:KEYSTORE_PASS) {
-            throw '缺少 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASS：没有密钥就没法发布与正式版签名一致的 APK'
+            throw 'ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASS are missing, cannot publish a signed APK'
           }
           [IO.File]::WriteAllBytes("$PWD\android\skylark.jks", [Convert]::FromBase64String($env:KEYSTORE_BASE64))
           [IO.File]::WriteAllText("$PWD\android\keystore.pass", $env:KEYSTORE_PASS)
-          Write-Output '签名：使用仓库密钥'
+          Write-Output 'signing: using the repository keystore'
 
       - name: Build Android APK
         shell: powershell
