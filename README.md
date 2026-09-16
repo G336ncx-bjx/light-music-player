@@ -119,6 +119,9 @@ dist\LightMusic.exe --shot out.png lyrics dark
 
 # 真实启动界面 5 秒后自动退出（冒烟测试）
 dist\LightMusic.exe --smoke
+
+# 验证桌面歌词“锁定”是否真的鼠标穿透（用 WindowFromPoint 做命中测试）
+dist\LightMusic.exe --lockcheck
 ```
 
 ## 许可证
