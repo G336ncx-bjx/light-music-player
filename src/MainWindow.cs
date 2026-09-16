@@ -21,7 +21,14 @@ namespace LightMusic
     public partial class MainWindow : Window
     {
         public const string AppName = "轻音乐";
-        public const string AppVersion = "1.2.0";
+        public const string AppVersion = "1.3.0";
+
+        /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
+        public static readonly string[] LyricColorPresets = new string[]
+        {
+            "#FFFFFF", "#FFE066", "#7CE7FF", "#FF9CC8", "#A8F0A0", "#C9B6FF",
+            "#111111", "#4B5563", "#1E3A8A", "#7F1D1D"
+        };
 
         private readonly AppSettings settings;
         private readonly PlayerEngine engine = new PlayerEngine();
@@ -33,6 +40,7 @@ namespace LightMusic
         private Song currentSong;
         private string searchText = string.Empty;
         private bool scanning;
+        private bool uploading;
 
         private DispatcherTimer timer;
         private Forms.NotifyIcon tray;
@@ -106,6 +114,8 @@ namespace LightMusic
             Closed += OnClosed;
             StateChanged += OnStateChanged;
             PreviewKeyDown += OnPreviewKeyDown;
+            AllowDrop = true;
+            Drop += OnDropFiles;
         }
 
         #region 公开接口（供各视图调用）
@@ -1250,6 +1260,138 @@ namespace LightMusic
             Raise(SettingsChanged);
             ShowToast("已清理云端缓存");
         }
+
+        #region 上传到云盘
+
+        private void OnDropFiles(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            string[] paths = (string[])e.Data.GetData(DataFormats.FileDrop);
+            if (paths == null || paths.Length == 0) return;
+            UploadFiles(paths);
+        }
+
+        /// <summary>选择本地文件上传到云盘分享目录。</summary>
+        public void PickAndUploadFiles()
+        {
+            if (!IsCloudSource)
+            {
+                ShowToast("请先在设置里填写云盘分享链接");
+                return;
+            }
+            Forms.OpenFileDialog dialog = new Forms.OpenFileDialog();
+            dialog.Title = "选择要上传到云盘的歌曲 / 歌词";
+            dialog.Multiselect = true;
+            dialog.Filter = "歌曲与歌词|*.mp3;*.flac;*.wav;*.m4a;*.aac;*.wma;*.ogg;*.opus;*.lrc|所有文件 (*.*)|*.*";
+            if (dialog.ShowDialog() != Forms.DialogResult.OK) return;
+            UploadFiles(dialog.FileNames);
+        }
+
+        /// <summary>把文件（或文件夹里的歌曲与歌词）上传到云盘分享目录。</summary>
+        public void UploadFiles(string[] paths)
+        {
+            if (!IsCloudSource)
+            {
+                ShowToast("请先在设置里填写云盘分享链接");
+                return;
+            }
+            if (uploading)
+            {
+                ShowToast("还有上传任务在进行中");
+                return;
+            }
+
+            List<string> files = new List<string>();
+            foreach (string path in paths)
+            {
+                if (string.IsNullOrEmpty(path)) continue;
+                try
+                {
+                    if (Directory.Exists(path))
+                    {
+                        foreach (string file in Directory.GetFiles(path, "*.*", SearchOption.AllDirectories))
+                        {
+                            if (IsUploadable(file)) files.Add(file);
+                        }
+                    }
+                    else if (File.Exists(path) && IsUploadable(path))
+                    {
+                        files.Add(path);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            if (files.Count == 0)
+            {
+                ShowToast("没有可上传的文件（支持音频与 .lrc 歌词）");
+                return;
+            }
+
+            uploading = true;
+            string url = settings.CloudUrl;
+            List<string> batch = files;
+            if (statusText != null) statusText.Text = "正在上传 0/" + batch.Count + "…";
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                int ok = 0;
+                List<string> failed = new List<string>();
+                for (int i = 0; i < batch.Count; i++)
+                {
+                    string path = batch[i];
+                    string name = Path.GetFileName(path);
+                    int index = i + 1;
+                    try
+                    {
+                        bool replaced;
+                        CloudClient.Upload(url, path, "/", delegate(long done, long total)
+                        {
+                            int percent = total > 0 ? (int)(done * 100 / total) : 0;
+                            Dispatcher.BeginInvoke((Action)delegate
+                            {
+                                if (statusText != null)
+                                    statusText.Text = "正在上传 " + index + "/" + batch.Count + "："
+                                        + name + " " + percent + "%";
+                            });
+                        }, out replaced);
+                        ok++;
+                    }
+                    catch (Exception ex)
+                    {
+                        failed.Add(name + "：" + ex.Message);
+                    }
+                }
+
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    uploading = false;
+                    UpdateStatusText();
+                    if (failed.Count == 0)
+                    {
+                        ShowToast("已上传 " + ok + " 个文件到云盘");
+                    }
+                    else
+                    {
+                        ShowToast("上传完成：" + ok + " 个成功，" + failed.Count + " 个失败（"
+                            + failed[0] + "）");
+                    }
+                    SaveSettings();
+                    Rescan();
+                });
+            });
+        }
+
+        private static bool IsUploadable(string path)
+        {
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            if (ext == ".lrc") return true;
+            return Array.IndexOf(LibraryScanner.Extensions, ext) >= 0;
+        }
+
+        #endregion
 
         private string LongDuration(double seconds)
         {

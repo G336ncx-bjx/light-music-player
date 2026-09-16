@@ -38,20 +38,39 @@ namespace LightMusic
             Theme.Current = theme;
 
             string lyricPath = Path.Combine(Path.GetTempPath(), "lightmusic-demo.lrc");
-            File.WriteAllText(lyricPath,
-                "[ti:晴天]\n[ar:周杰伦]\n[00:00.00]晴天 - 周杰伦\n[00:12.40]故事的小黄花\n" +
-                "[00:17.20]从出生那年就飘着\n[00:22.60]童年的荡秋千\n[00:27.80]随记忆一直晃到现在\n" +
-                "[00:33.00]Re So So Si Do Si La\n[00:38.20]吹着前奏望着天空\n[00:43.60]我想起花瓣试着掉落\n",
-                new System.Text.UTF8Encoding(true));
+            System.Text.StringBuilder lrc = new System.Text.StringBuilder();
+            lrc.AppendLine("[ti:晴天]");
+            lrc.AppendLine("[ar:周杰伦]");
+            lrc.AppendLine("[00:00.00]晴天 - 周杰伦");
+            string[] demoLines = new string[]
+            {
+                "故事的小黄花", "从出生那年就飘着", "童年的荡秋千", "随记忆一直晃到现在",
+                "Re So So Si Do Si La", "吹着前奏望着天空", "我想起花瓣试着掉落",
+                "为你翘课的那一天", "花落的那一天", "教室的那一间", "我怎么看不见",
+                "消失的下雨天", "我好想再淋一遍", "没想到失去的勇气我还留着",
+                "好想再问一遍", "你会等待还是离开", "刮风这天我试过握着你手",
+                "但偏偏雨渐渐大到我看你不见", "还要多久我才能在你身边",
+                "等到放晴的那天也许我会比较好一点", "从前从前有个人爱你很久",
+                "但偏偏风渐渐把距离吹得好远", "好不容易又能再多爱一天",
+                "但故事的最后你好像还是说了拜拜"
+            };
+            for (int i = 0; i < demoLines.Length; i++)
+            {
+                lrc.AppendLine("[00:" + (12 + i * 6).ToString("00") + ".00]" + demoLines[i]);
+                lrc.AppendLine("[00:" + (15 + i * 6).ToString("00") + ".00]" + demoLines[i] + "（副歌）");
+            }
+            File.WriteAllText(lyricPath, lrc.ToString(), new System.Text.UTF8Encoding(true));
 
             MainWindow window = new MainWindow();
             Theme.Apply(theme);
+            window.NotifySettingsChanged();
             window.LoadDemoForShot(view, lyricPath);
             Pump(0.25);
 
             FrameworkElement root;
             if (view == "desktop")
             {
+                window.Settings.LyricLocked = false;
                 DesktopLyricsWindow lyric = new DesktopLyricsWindow(window);
                 lyric.ApplySettings();
                 lyric.UpdateNow();
@@ -89,6 +108,8 @@ namespace LightMusic
             root.Measure(new Size(width, height));
             root.Arrange(new Rect(0, 0, width, height));
             root.UpdateLayout();
+            MainWindow.TraceStep("shot " + view + " activeLyric=" + window.Lyrics.CurrentIndex
+                + " lines=" + window.Lyrics.Lines.Count + " | " + window.Lyrics.DebugState());
 
             RenderTargetBitmap bitmap = new RenderTargetBitmap(
                 (int)width, (int)height, 96, 96, PixelFormats.Pbgra32);

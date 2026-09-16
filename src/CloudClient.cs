@@ -284,6 +284,163 @@ namespace LightMusic
             File.Move(temp, targetPath);
         }
 
+        /// <summary>取得某个目录的上传地址（分享链接需要开启上传权限）。</summary>
+        public static string GetUploadUrl(string urlOrToken, string dirPath)
+        {
+            string token = ParseToken(urlOrToken);
+            string host = ParseHost(urlOrToken);
+            string path = string.IsNullOrEmpty(dirPath) ? "/" : dirPath;
+            string url = host + "/api/v2.1/share-links/" + token + "/upload/?path="
+                       + Uri.EscapeDataString(path);
+            string json = GetString(url);
+
+            int at = json.IndexOf("\"upload_link\"", StringComparison.Ordinal);
+            if (at < 0) throw new InvalidOperationException("该分享链接没有开启上传权限");
+            int start = json.IndexOf('"', json.IndexOf(':', at) + 1);
+            int end = json.IndexOf('"', start + 1);
+            if (start < 0 || end < 0) throw new InvalidOperationException("上传地址解析失败");
+            return json.Substring(start + 1, end - start - 1);
+        }
+
+        /// <summary>
+        /// 上传本地文件到云盘的指定目录。
+        /// progress 回调参数为 (已上传字节, 总字节)；同名文件会自动重试覆盖。
+        /// </summary>
+        public static bool Upload(string urlOrToken, string localFilePath, string dirPath,
+            Action<long, long> progress, out bool replaced)
+        {
+            replaced = false;
+            string link = GetUploadUrl(urlOrToken, dirPath);
+            string result;
+            bool ok = TryUpload(link, localFilePath, dirPath, progress, false, out result);
+            if (ok) return true;
+
+            if (result != null && (result.IndexOf("exist", StringComparison.OrdinalIgnoreCase) >= 0
+                || result.IndexOf("already", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                ok = TryUpload(link, localFilePath, dirPath, progress, true, out result);
+                replaced = ok;
+            }
+            if (!ok) throw new InvalidOperationException(Shorten(result));
+            return true;
+        }
+
+        private static bool TryUpload(string uploadLink, string localFilePath, string dirPath,
+            Action<long, long> progress, bool replace, out string error)
+        {
+            error = null;
+            string url = uploadLink + "?ret-json=1";
+            if (replace) url += "&replace=1";
+
+            string boundary = "----LightMusic" + Guid.NewGuid().ToString("N");
+            string fileName = Path.GetFileName(localFilePath);
+            string dir = string.IsNullOrEmpty(dirPath) ? "/" : dirPath;
+            if (!dir.StartsWith("/")) dir = "/" + dir;
+
+            byte[] dirPart = FormField(boundary, "parent_dir", dir);
+            byte[] relPart = FormField(boundary, "relative_path", string.Empty);
+            byte[] filePart = FileFieldHeader(boundary, fileName);
+            byte[] tail = Encoding.UTF8.GetBytes("\r\n--" + boundary + "--\r\n");
+            long fileLength = new FileInfo(localFilePath).Length;
+
+            HttpWebRequest request = CreateRequest(url);
+            request.Method = "POST";
+            request.ContentType = "multipart/form-data; boundary=" + boundary;
+            request.ContentLength = dirPart.Length + relPart.Length + filePart.Length + fileLength + tail.Length;
+            request.Timeout = 60000;
+
+            using (Stream stream = request.GetRequestStream())
+            {
+                stream.Write(dirPart, 0, dirPart.Length);
+                stream.Write(relPart, 0, relPart.Length);
+                stream.Write(filePart, 0, filePart.Length);
+
+                using (FileStream file = new FileStream(localFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    byte[] buffer = new byte[131072];
+                    long done = 0;
+                    int read;
+                    while ((read = file.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        stream.Write(buffer, 0, read);
+                        done += read;
+                        if (progress != null) progress(done, fileLength);
+                    }
+                }
+                stream.Write(tail, 0, tail.Length);
+            }
+
+            try
+            {
+                using (WebResponse response = request.GetResponse())
+                {
+                    using (Stream stream = response.GetResponseStream())
+                    {
+                        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                        {
+                            string body = reader.ReadToEnd();
+                            if (body.IndexOf("\"error\"", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                error = body;
+                                return false;
+                            }
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (WebException ex)
+            {
+                error = ReadError(ex);
+                return false;
+            }
+        }
+
+        private static string ReadError(WebException ex)
+        {
+            try
+            {
+                if (ex.Response != null)
+                {
+                    using (Stream stream = ex.Response.GetResponseStream())
+                    {
+                        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                        {
+                            return reader.ReadToEnd();
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return ex.Message;
+        }
+
+        private static string Shorten(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "上传失败";
+            string clean = text.Replace("\r", " ").Replace("\n", " ").Trim();
+            return clean.Length > 160 ? clean.Substring(0, 160) : clean;
+        }
+
+        private static byte[] FormField(string boundary, string name, string value)
+        {
+            string text = "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n"
+                + value + "\r\n";
+            return Encoding.UTF8.GetBytes(text);
+        }
+
+        private static byte[] FileFieldHeader(string boundary, string fileName)
+        {
+            string text = "--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"file\"; filename=\""
+                + fileName.Replace("\"", "_") + "\"\r\n"
+                + "Content-Type: application/octet-stream\r\n\r\n";
+            return Encoding.UTF8.GetBytes(text);
+        }
+
         private static HttpWebRequest CreateRequest(string url)
         {
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);

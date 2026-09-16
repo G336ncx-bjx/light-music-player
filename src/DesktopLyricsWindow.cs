@@ -34,9 +34,12 @@ namespace LightMusic
         private bool hovering;
         private bool overToolbar;
         private bool toolbarShown;
+        private bool dragging;
+        private bool unlockVisible;
         private DateTime hoverStarted = DateTime.MinValue;
         private DispatcherTimer pollTimer;
         private DispatcherTimer hintTimer;
+        private LyricsUnlockWindow unlockButton;
 
         public DesktopLyricsWindow(MainWindow owner)
         {
@@ -96,7 +99,21 @@ namespace LightMusic
             {
                 if (locked) return;
                 if (overToolbar) return;
-                if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+                if (e.ButtonState != MouseButtonState.Pressed) return;
+                dragging = true;
+                try
+                {
+                    DragMove();
+                }
+                catch (Exception)
+                {
+                }
+                finally
+                {
+                    dragging = false;
+                    overToolbar = false;
+                    ApplyVisualState();
+                }
             };
             MouseRightButtonUp += delegate { if (!locked) ShowMenu(); };
 
@@ -112,6 +129,7 @@ namespace LightMusic
             {
                 if (pollTimer != null) pollTimer.Stop();
                 if (hintTimer != null) hintTimer.Stop();
+                HideUnlockButton();
             };
         }
 
@@ -216,6 +234,7 @@ namespace LightMusic
             locked = s.LyricLocked;
             UpdateLockVisual();
             ApplyVisualState();
+            if (locked) ShowUnlockButton();
         }
 
         private void UpdateLockVisual()
@@ -306,6 +325,12 @@ namespace LightMusic
             ApplyVisualState();
         }
 
+        /// <summary>锁定状态下浮出的「解锁」按钮（供自检使用）。</summary>
+        public LyricsUnlockWindow UnlockButton
+        {
+            get { return unlockButton; }
+        }
+
         private void ChangeFont(double delta)
         {
             double size = main.Settings.LyricFontSize + delta;
@@ -323,7 +348,7 @@ namespace LightMusic
         {
             if (pollTimer != null) return;
             pollTimer = new DispatcherTimer();
-            pollTimer.Interval = TimeSpan.FromMilliseconds(120);
+            pollTimer.Interval = TimeSpan.FromMilliseconds(150);
             pollTimer.Tick += delegate { PollCursor(); };
             pollTimer.Start();
         }
@@ -332,6 +357,7 @@ namespace LightMusic
         private void PollCursor()
         {
             if (!IsVisible) return;
+            if (dragging) return;
             POINT cursor;
             if (!GetCursorPos(out cursor)) return;
 
@@ -390,9 +416,12 @@ namespace LightMusic
             bool interactive = !locked || overToolbar;
             SetClickThrough(!interactive);
 
-            bool showToolbar = toolbarShown;
+            // 锁定状态只保留一个「解锁」按钮（独立窗口，始终可点），其余按钮全部隐藏
+            bool showToolbar = toolbarShown && !locked;
             toolbar.Opacity = showToolbar ? 1 : 0;
             toolbar.IsHitTestVisible = interactive && showToolbar;
+            if (locked) ShowUnlockButton();
+            else HideUnlockButton();
 
             bool showBackground = !locked && hovering;
             if (showBackground)
@@ -412,6 +441,32 @@ namespace LightMusic
                 frame.Effect = null;
             }
             Cursor = locked ? Cursors.Arrow : Cursors.SizeAll;
+        }
+
+        private void ShowUnlockButton()
+        {
+            if (!locked) return;
+            if (unlockButton == null)
+            {
+                unlockButton = new LyricsUnlockWindow(main);
+                unlockButton.Show();
+                unlockVisible = true;
+            }
+            unlockButton.PlaceNear(this);
+            if (!unlockVisible)
+            {
+                unlockButton.Show();
+                unlockVisible = true;
+            }
+        }
+
+        private void HideUnlockButton()
+        {
+            if (unlockButton == null) return;
+            unlockButton.Hide();
+            unlockButton.Close();
+            unlockButton = null;
+            unlockVisible = false;
         }
 
         private const int GWL_EXSTYLE = -20;
@@ -517,6 +572,7 @@ namespace LightMusic
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("增大字号", delegate { ChangeFont(3); }));
             menu.Items.Add(Item("减小字号", delegate { ChangeFont(-3); }));
+            menu.Items.Add(BuildColorMenu());
             menu.Items.Add(Item(main.Settings.LyricShowTranslation ? "隐藏翻译" : "显示翻译", delegate
             {
                 main.Settings.LyricShowTranslation = !main.Settings.LyricShowTranslation;
@@ -529,6 +585,69 @@ namespace LightMusic
             menu.Items.Add(Item("关闭桌面歌词", delegate { main.ShowDesktopLyrics(false); }));
             menu.PlacementTarget = this;
             menu.IsOpen = true;
+        }
+
+        private MenuItem BuildColorMenu()
+        {
+            MenuItem root = new MenuItem();
+            root.Header = "歌词颜色";
+            foreach (string color in MainWindow.LyricColorPresets)
+            {
+                MenuItem item = new MenuItem();
+                item.Header = ColorLabel(color);
+                string captured = color;
+                item.Click += delegate { SetColor(captured); };
+                root.Items.Add(item);
+            }
+            root.Items.Add(new Separator());
+            root.Items.Add(Item("自定义颜色…", delegate { PickColor(); }));
+            return root;
+        }
+
+        private static string ColorLabel(string hex)
+        {
+            switch (hex)
+            {
+                case "#FFFFFF": return "白色";
+                case "#FFE066": return "暖黄";
+                case "#7CE7FF": return "天蓝";
+                case "#FF9CC8": return "粉红";
+                case "#A8F0A0": return "浅绿";
+                case "#C9B6FF": return "淡紫";
+                case "#111111": return "黑色";
+                case "#4B5563": return "深灰";
+                case "#1E3A8A": return "深蓝";
+                case "#7F1D1D": return "深红";
+                default: return hex;
+            }
+        }
+
+        private void SetColor(string color)
+        {
+            main.Settings.LyricColor = color;
+            main.SaveSettings();
+            ApplySettings();
+            main.NotifySettingsChanged();
+        }
+
+        private void PickColor()
+        {
+            using (System.Windows.Forms.ColorDialog dialog = new System.Windows.Forms.ColorDialog())
+            {
+                dialog.FullOpen = true;
+                dialog.AnyColor = true;
+                dialog.AnyColor = true;
+                try
+                {
+                    if (!string.IsNullOrEmpty(main.Settings.LyricColor))
+                        dialog.Color = System.Drawing.ColorTranslator.FromHtml(main.Settings.LyricColor);
+                }
+                catch (Exception)
+                {
+                }
+                if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+                SetColor(string.Format("#{0:X2}{1:X2}{2:X2}", dialog.Color.R, dialog.Color.G, dialog.Color.B));
+            }
         }
 
         private static MenuItem Item(string text, RoutedEventHandler handler)

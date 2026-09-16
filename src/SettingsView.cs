@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using Forms = System.Windows.Forms;
 
 namespace LightMusic
 {
@@ -28,7 +29,7 @@ namespace LightMusic
         private readonly TextBlock cloudStatus = Ui.Text("", 11.5, "TextMuted");
         private readonly TextBlock cacheInfo = Ui.Text("", 11.5, "TextMuted");
         private readonly CheckBox cloudCacheCheck = new CheckBox();
-        private readonly StackPanel colorRow = new StackPanel();
+        private readonly WrapPanel colorRow = new WrapPanel();
         private readonly Dictionary<string, Border> colorSwatches = new Dictionary<string, Border>();
         private RadioButton darkTheme;
         private RadioButton lightTheme;
@@ -199,6 +200,7 @@ namespace LightMusic
                 }
             });
             Button refresh = Ui.Button("刷新列表", "OutlineButton", delegate { main.Rescan(); });
+            Button upload = Ui.Button("上传歌曲", "PrimaryButton", delegate { main.PickAndUploadFiles(); });
 
             Grid urlRow = new Grid();
             urlRow.ColumnDefinitions.Add(new ColumnDefinition());
@@ -206,7 +208,7 @@ namespace LightMusic
             urlRow.ColumnDefinitions.Add(new ColumnDefinition());
             urlRow.ColumnDefinitions[1].Width = GridLength.Auto;
             urlRow.Children.Add(cloudUrlBox);
-            StackPanel buttons = Ui.Row(8, test, browse, refresh);
+            StackPanel buttons = Ui.Row(8, test, browse, refresh, upload);
             buttons.Margin = new Thickness(10, 0, 0, 0);
             buttons.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(buttons, 1);
@@ -346,9 +348,16 @@ namespace LightMusic
             StackPanel fontRow = Ui.Row(10, fontSizeSlider, fontSizeLabel);
             StackPanel opacityRow = Ui.Row(10, opacitySlider, opacityLabel);
 
-            colorRow.Orientation = Orientation.Horizontal;
-            string[] colors = new string[] { "#FFFFFF", "#FFE066", "#7CE7FF", "#FF9CC8", "#A8F0A0", "#C9B6FF" };
-            foreach (string color in colors) colorRow.Children.Add(ColorSwatch(color));
+            colorRow.VerticalAlignment = VerticalAlignment.Center;
+            foreach (string color in MainWindow.LyricColorPresets) colorRow.Children.Add(ColorSwatch(color));
+
+            Button custom = Ui.Button("自定义…", "OutlineButton", delegate { PickCustomColor(); });
+            custom.Margin = new Thickness(2, 3, 0, 3);
+            custom.VerticalAlignment = VerticalAlignment.Center;
+            colorRow.Children.Add(custom);
+
+            TextBlock colorHint = Ui.Text("浅色背景建议选深色字（如 #111111），深色背景选浅色字。", 11.5, "TextMuted");
+            colorHint.Margin = new Thickness(0, 8, 0, 0);
 
             translationCheck.Style = (Style)Application.Current.Resources["ModernCheckBox"];
             translationCheck.Content = "显示翻译（同时间的第二行歌词）";
@@ -375,7 +384,7 @@ namespace LightMusic
             return Card("桌面歌词",
                 StackedRow("歌词字号", "", fontRow),
                 StackedRow("不透明度", "", opacityRow),
-                StackedRow("歌词颜色", "", colorRow),
+                StackedRow("歌词颜色", "", Ui.Column(0, colorRow, colorHint)),
                 checks,
                 hint);
         }
@@ -383,10 +392,10 @@ namespace LightMusic
         private Border ColorSwatch(string color)
         {
             Border border = new Border();
-            border.Width = 30;
-            border.Height = 30;
+            border.Width = 28;
+            border.Height = 28;
             border.CornerRadius = new CornerRadius(9);
-            border.Margin = new Thickness(0, 0, 8, 0);
+            border.Margin = new Thickness(0, 3, 7, 3);
             border.Cursor = System.Windows.Input.Cursors.Hand;
             border.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
             border.BorderThickness = new Thickness(2);
@@ -401,6 +410,31 @@ namespace LightMusic
             };
             colorSwatches[color] = border;
             return border;
+        }
+
+        /// <summary>自定义歌词颜色（系统取色器）。</summary>
+        private void PickCustomColor()
+        {
+            using (Forms.ColorDialog dialog = new Forms.ColorDialog())
+            {
+                dialog.FullOpen = true;
+                dialog.AnyColor = true;
+                dialog.AnyColor = true;
+                try
+                {
+                    if (!string.IsNullOrEmpty(main.Settings.LyricColor))
+                        dialog.Color = System.Drawing.ColorTranslator.FromHtml(main.Settings.LyricColor);
+                }
+                catch (Exception)
+                {
+                }
+                if (dialog.ShowDialog() != Forms.DialogResult.OK) return;
+                main.Settings.LyricColor = string.Format("#{0:X2}{1:X2}{2:X2}",
+                    dialog.Color.R, dialog.Color.G, dialog.Color.B);
+                main.SaveSettings();
+                ApplyDesktopLyrics();
+                UpdateSwatches();
+            }
         }
 
         private UIElement BuildAppearanceCard()
@@ -447,7 +481,9 @@ namespace LightMusic
         private UIElement BuildAboutCard()
         {
             TextBlock version = Ui.Text(MainWindow.AppName + "  v" + MainWindow.AppVersion + "  ·  轻量级本地音乐播放器", 13, "Text");
-            TextBlock tech = Ui.Text("纯 Windows 原生实现，无需安装任何运行库；音乐与歌词全部来自本地文件夹。", 12, "TextMuted");
+            TextBlock tech = Ui.Text(
+                "纯 Windows 原生实现，无需安装任何运行库；歌曲与歌词从你的云盘分享文件夹读取，播放时按需缓存到本地。",
+                12, "TextMuted");
             tech.Margin = new Thickness(0, 6, 0, 0);
             tech.TextWrapping = TextWrapping.Wrap;
 
@@ -466,7 +502,8 @@ namespace LightMusic
             lyricTitle.Margin = new Thickness(0, 14, 0, 6);
             TextBlock lyricHint = Ui.Text(
                 "锁定后歌词会变成鼠标穿透：点击、拖动、框选都不会被它挡住，完全不影响使用电脑。\n" +
-                "解锁方式：主界面顶栏的锁形按钮、设置里的开关、或全局快捷键 Ctrl+Alt+L。\n" +
+                "锁定后歌词右上角会出现一个「解锁」小按钮，随时可以点它解锁；" +
+                "也可以用主界面顶栏的锁形按钮、设置里的开关、或全局快捷键 Ctrl+Alt+L。\n" +
                 "拖动可移动位置，右键菜单可调整字号、回到主界面或关闭；位置与样式会自动记忆。",
                 12, "TextMuted");
             lyricHint.TextWrapping = TextWrapping.Wrap;

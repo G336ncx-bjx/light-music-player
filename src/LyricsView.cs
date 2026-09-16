@@ -20,7 +20,7 @@ namespace LightMusic
         private readonly List<TextBlock> lineTexts = new List<TextBlock>();
 
         private readonly StackPanel lyricsPanel = new StackPanel();
-        private readonly TranslateTransform lyricsTransform = new TranslateTransform();
+        private readonly ScrollViewer scroller = new ScrollViewer();
         private readonly Border topSpacer = new Border();
         private readonly Border bottomSpacer = new Border();
         private readonly Grid viewport = new Grid();
@@ -28,6 +28,8 @@ namespace LightMusic
         private readonly TextBlock statusText = Ui.Text("", 13, "TextMuted");
         private readonly Button backButton = new Button();
         private readonly Border rightCard = new Border();
+        private Border topMask;
+        private Border bottomMask;
 
         private readonly TextBlock songTitle = Ui.Text("未在播放", 21, "Text", FontWeights.SemiBold);
         private readonly TextBlock songArtist = Ui.Text("", 13, "TextDim");
@@ -38,7 +40,12 @@ namespace LightMusic
         private readonly CheckBox translationCheck = new CheckBox();
 
         private int activeIndex = -1;
-        private double manualDelta;
+        private bool scrollingByCode;
+        private DateTime lastProgrammaticScroll = DateTime.MinValue;
+        private DispatcherTimer scrollTimer;
+        private double scrollFrom;
+        private double scrollTo;
+        private int scrollStep;
         private DispatcherTimer manualTimer;
         private bool synced;
 
@@ -67,7 +74,12 @@ namespace LightMusic
             SyncToggles();
             Load(null);
 
-            main.SettingsChanged += delegate { SyncToggles(); UpdateOffsetLabel(); };
+            main.SettingsChanged += delegate
+            {
+                SyncToggles();
+                UpdateOffsetLabel();
+                RefreshMasks();
+            };
         }
 
         #region 左侧信息卡片
@@ -192,9 +204,15 @@ namespace LightMusic
         private UIElement BuildLyricsArea()
         {
             viewport.ClipToBounds = true;
-            lyricsPanel.RenderTransform = lyricsTransform;
-            lyricsPanel.VerticalAlignment = VerticalAlignment.Top;
-            viewport.Children.Add(lyricsPanel);
+
+            // 用 ScrollViewer 承载歌词：长歌词（几百行）也能正常滚动与渲染
+            scroller.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
+            scroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+            scroller.CanContentScroll = false;
+            scroller.Focusable = false;
+            scroller.Content = lyricsPanel;
+            scroller.ScrollChanged += OnScrollerChanged;
+            viewport.Children.Add(scroller);
 
             statusPanel.HorizontalAlignment = HorizontalAlignment.Center;
             statusPanel.VerticalAlignment = VerticalAlignment.Center;
@@ -212,8 +230,10 @@ namespace LightMusic
             // 上下淡出遮罩，让滚动更柔和
             Grid masks = new Grid();
             masks.IsHitTestVisible = false;
-            masks.Children.Add(BuildFadeMask(VerticalAlignment.Top, true));
-            masks.Children.Add(BuildFadeMask(VerticalAlignment.Bottom, false));
+            topMask = BuildFadeMask(VerticalAlignment.Top, true);
+            bottomMask = BuildFadeMask(VerticalAlignment.Bottom, false);
+            masks.Children.Add(topMask);
+            masks.Children.Add(bottomMask);
             viewport.Children.Add(masks);
 
             backButton.Style = (Style)Application.Current.Resources["OutlineButton"];
@@ -224,13 +244,12 @@ namespace LightMusic
             backButton.Visibility = Visibility.Collapsed;
             backButton.Click += delegate
             {
-                manualDelta = 0;
                 backButton.Visibility = Visibility.Collapsed;
                 ScrollToActive(true);
             };
             viewport.Children.Add(backButton);
 
-            viewport.SizeChanged += delegate
+            scroller.SizeChanged += delegate
             {
                 UpdateSpacers();
                 // 等布局真正完成后再定位，否则拿到的行位置还是旧的
@@ -239,15 +258,6 @@ namespace LightMusic
                     UpdateSpacers();
                     ScrollToActive(false);
                 }, DispatcherPriority.Loaded);
-            };
-            viewport.MouseWheel += delegate(object sender, MouseWheelEventArgs e)
-            {
-                manualDelta -= e.Delta * 0.7;
-                ClampManual();
-                ScrollToActive(false);
-                backButton.Visibility = Visibility.Visible;
-                RestartManualTimer();
-                e.Handled = true;
             };
             IsVisibleChanged += delegate
             {
@@ -266,16 +276,28 @@ namespace LightMusic
             Border mask = new Border();
             mask.Height = 64;
             mask.VerticalAlignment = alignment;
-            Color card = ((SolidColorBrush)Application.Current.Resources["Card"]).Color;
+            mask.Tag = fromCard;
+            mask.Background = CreateMaskBrush(fromCard);
+            return mask;
+        }
+
+        private static LinearGradientBrush CreateMaskBrush(bool fromCard)
+        {
+            SolidColorBrush cardBrush = Application.Current.Resources["Card"] as SolidColorBrush;
+            Color card = cardBrush != null ? cardBrush.Color : Color.FromRgb(24, 27, 34);
             LinearGradientBrush brush = new LinearGradientBrush();
             brush.StartPoint = new Point(0, fromCard ? 1 : 0);
             brush.EndPoint = new Point(0, fromCard ? 0 : 1);
-            GradientStop solid = new GradientStop(card, 0);
-            GradientStop clear = new GradientStop(Color.FromArgb(0, card.R, card.G, card.B), 1);
-            brush.GradientStops.Add(solid);
-            brush.GradientStops.Add(clear);
-            mask.Background = brush;
-            return mask;
+            brush.GradientStops.Add(new GradientStop(card, 0));
+            brush.GradientStops.Add(new GradientStop(Color.FromArgb(0, card.R, card.G, card.B), 1));
+            return brush;
+        }
+
+        /// <summary>切换主题后重新生成淡出遮罩的颜色。</summary>
+        private void RefreshMasks()
+        {
+            if (topMask != null) topMask.Background = CreateMaskBrush(true);
+            if (bottomMask != null) bottomMask.Background = CreateMaskBrush(false);
         }
 
         #endregion
@@ -293,6 +315,28 @@ namespace LightMusic
         public bool Synced
         {
             get { return synced; }
+        }
+
+        /// <summary>调试用：输出歌词滚动相关的尺寸信息。</summary>
+        public string DebugState()
+        {
+            string top = "-";
+            if (activeIndex >= 0 && activeIndex < lineElements.Count)
+            {
+                try
+                {
+                    top = lineElements[activeIndex].TransformToAncestor(lyricsPanel)
+                        .Transform(new Point(0, 0)).Y.ToString("0.0");
+                }
+                catch (Exception)
+                {
+                }
+            }
+            return "viewportH=" + viewport.ActualHeight.ToString("0.0")
+                + " panelH=" + lyricsPanel.ActualHeight.ToString("0.0")
+                + " scroll=" + scroller.VerticalOffset.ToString("0.0") + "/" + scroller.ExtentHeight.ToString("0.0")
+                + " activeTop=" + top
+                + " elements=" + lineElements.Count;
         }
 
         private static Color Parse(string hex)
@@ -361,7 +405,6 @@ namespace LightMusic
                 lineTexts[activeIndex].FontWeight = FontWeights.SemiBold;
                 lineTexts[activeIndex].FontSize = 17.5;
                 lineTexts[activeIndex].SetResourceReference(TextBlock.ForegroundProperty, "Text");
-                manualDelta = 0;
                 backButton.Visibility = Visibility.Collapsed;
                 ScrollToActive(true);
             }
@@ -393,7 +436,6 @@ namespace LightMusic
             lineTexts.Clear();
             lyricsPanel.Children.Clear();
             activeIndex = -1;
-            manualDelta = 0;
             backButton.Visibility = Visibility.Collapsed;
 
             songTitle.Text = song == null ? "未在播放" : song.Title;
@@ -487,7 +529,6 @@ namespace LightMusic
             lyricsPanel.Children.Add(bottomSpacer);
             UpdateSpacers();
             UpdateLineOpacities();
-            lyricsTransform.Y = 0;
             ScrollToActive(false);
             Dispatcher.BeginInvoke((Action)delegate
             {
@@ -508,16 +549,19 @@ namespace LightMusic
 
         private void UpdateSpacers()
         {
-            double pad = Math.Max(60, viewport.ActualHeight / 2 - 30);
+            double pad = Math.Max(60, scroller.ViewportHeight / 2 - 30);
             topSpacer.Height = pad;
             bottomSpacer.Height = pad;
         }
 
-        private void ClampManual()
+        /// <summary>用户手动滚动（滚轮 / 触摸板）时暂停自动跟随，并显示「回到当前歌词」。</summary>
+        private void OnScrollerChanged(object sender, ScrollChangedEventArgs e)
         {
-            double max = viewport.ActualHeight * 0.9;
-            if (manualDelta > max) manualDelta = max;
-            if (manualDelta < -max) manualDelta = -max;
+            if (scrollingByCode) return;
+            if ((DateTime.Now - lastProgrammaticScroll).TotalMilliseconds < 250) return;
+            if (Math.Abs(e.VerticalChange) < 0.5) return;
+            backButton.Visibility = Visibility.Visible;
+            RestartManualTimer();
         }
 
         private void RestartManualTimer()
@@ -529,7 +573,6 @@ namespace LightMusic
                 manualTimer.Tick += delegate
                 {
                     manualTimer.Stop();
-                    manualDelta = 0;
                     backButton.Visibility = Visibility.Collapsed;
                     ScrollToActive(true);
                 };
@@ -541,6 +584,8 @@ namespace LightMusic
         private void ScrollToActive(bool animate)
         {
             if (activeIndex < 0 || activeIndex >= lineElements.Count) return;
+            // 先让新的行高生效，否则拿到的行位置还是旧的，滚动位置会偏
+            lyricsPanel.UpdateLayout();
             FrameworkElement element = lineElements[activeIndex];
             double top;
             try
@@ -551,20 +596,76 @@ namespace LightMusic
             {
                 return;
             }
-            double target = viewport.ActualHeight / 2 - (top + element.ActualHeight / 2) + manualDelta;
+            double target = top + element.ActualHeight / 2 - scroller.ViewportHeight / 2;
+            if (target < 0) target = 0;
+            double max = Math.Max(0, scroller.ExtentHeight - scroller.ViewportHeight);
+            if (target > max) target = max;
 
-            if (animate)
+            if (!animate)
             {
-                DoubleAnimation animation = new DoubleAnimation(lyricsTransform.Y, target,
-                    TimeSpan.FromMilliseconds(380));
-                animation.EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut };
-                lyricsTransform.BeginAnimation(TranslateTransform.YProperty, animation);
+                StopScrollAnimation();
+                SetScrollOffset(target);
+                return;
             }
-            else
+            StartScrollAnimation(target);
+        }
+
+        private void SetScrollOffset(double offset)
+        {
+            lastProgrammaticScroll = DateTime.Now;
+            scrollingByCode = true;
+            try
             {
-                lyricsTransform.BeginAnimation(TranslateTransform.YProperty, null);
-                lyricsTransform.Y = target;
+                scroller.ScrollToVerticalOffset(offset);
             }
+            finally
+            {
+                scrollingByCode = false;
+            }
+        }
+
+        /// <summary>用缓动把滚动位置平滑推到目标（WPF 的 ScrollViewer 没有自带平滑滚动）。</summary>
+        private void StartScrollAnimation(double target)
+        {
+            StopScrollAnimation();
+            scrollFrom = scroller.VerticalOffset;
+            scrollTo = target;
+            scrollStep = 0;
+            if (Math.Abs(scrollTo - scrollFrom) < 1)
+            {
+                SetScrollOffset(target);
+                return;
+            }
+            scrollTimer = new DispatcherTimer();
+            scrollTimer.Interval = TimeSpan.FromMilliseconds(16);
+            scrollTimer.Tick += delegate
+            {
+                scrollStep++;
+                double t = scrollStep / 22.0;
+                if (t >= 1)
+                {
+                    t = 1;
+                    StopScrollAnimation();
+                }
+                double eased = 1 - Math.Pow(1 - t, 3);
+                SetScrollOffset(scrollFrom + (scrollTo - scrollFrom) * eased);
+                if (t >= 1) StopScrollAnimationOnly();
+            };
+            scrollTimer.Start();
+        }
+
+        private void StopScrollAnimationOnly()
+        {
+            if (scrollTimer != null)
+            {
+                scrollTimer.Stop();
+                scrollTimer = null;
+            }
+        }
+
+        private void StopScrollAnimation()
+        {
+            StopScrollAnimationOnly();
         }
     }
 }

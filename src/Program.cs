@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -61,6 +62,13 @@ namespace LightMusic
             {
                 AttachConsole();
                 Environment.Exit(CloudTest(args.Length > 1 ? args[1] : null));
+                return;
+            }
+            if (args.Length > 0 && args[0] == "--uploadtest")
+            {
+                AttachConsole();
+                Environment.Exit(UploadTest(args.Length > 1 ? args[1] : null,
+                    args.Length > 2 ? args[2] : null));
                 return;
             }
 
@@ -173,6 +181,18 @@ namespace LightMusic
                 bool hitLocked = HitTest(handle);
                 int styleLocked = GetWindowLong(handle, GWL_EXSTYLE_LOCAL);
 
+                // 锁定时应出现一个始终可点的「解锁」按钮窗口
+                bool unlockClickable = false;
+                bool unlockVisible = false;
+                LyricsUnlockWindow unlock = lyrics.UnlockButton;
+                if (unlock != null)
+                {
+                    IntPtr unlockHandle = new System.Windows.Interop.WindowInteropHelper(unlock).Handle;
+                    int unlockStyle = GetWindowLong(unlockHandle, GWL_EXSTYLE_LOCAL);
+                    unlockClickable = (unlockStyle & WS_EX_TRANSPARENT_LOCAL) == 0 && HitTest(unlockHandle);
+                    unlockVisible = unlock.IsVisible;
+                }
+
                 main.SetLyricLocked(original, false);
                 main.ShowDesktopLyrics(false);
 
@@ -187,8 +207,10 @@ namespace LightMusic
                 Report(report, "锁定后 WS_EX_TRANSPARENT    = " + transparent + "（期望 True）");
                 Report(report, "锁定后 WS_EX_NOACTIVATE     = " + noActivate + "（期望 True，不抢焦点）");
                 Report(report, "锁定后 WS_EX_TOOLWINDOW     = " + toolWindow + "（期望 True，不占 Alt+Tab）");
+                Report(report, "锁定后解锁按钮可见可点     = " + (unlockVisible && unlockClickable) + "（期望 True）");
 
-                bool ok = hitUnlocked && !hitLocked && !transparentBefore && transparent && noActivate && toolWindow;
+                bool ok = hitUnlocked && !hitLocked && !transparentBefore && transparent && noActivate
+                    && toolWindow && unlockVisible && unlockClickable;
                 Report(report, ok ? "LOCKCHECK OK" : "LOCKCHECK FAILED");
                 return ok ? 0 : 1;
             }
@@ -301,6 +323,42 @@ namespace LightMusic
         }
 
         /// <summary>真实启动一次界面（显示窗口若干秒后自动退出），用于冒烟测试。</summary>
+        /// <summary>上传自检：把本地文件传到云盘分享目录，并列出结果确认。</summary>
+        private static int UploadTest(string url, string localFile)
+        {
+            StringBuilder report = new StringBuilder();
+            if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(localFile))
+            {
+                Console.WriteLine("usage: LightMusic.exe --uploadtest <share-url> <local-file>");
+                return 1;
+            }
+            try
+            {
+                Report(report, "upload url = " + CloudClient.GetUploadUrl(url, "/"));
+                long last = 0;
+                bool replaced;
+                CloudClient.Upload(url, localFile, "/", delegate(long done, long total) { last = done; }, out replaced);
+                Report(report, "uploaded " + System.IO.Path.GetFileName(localFile)
+                    + " (" + last + " bytes, replaced=" + replaced + ")");
+
+                List<CloudEntry> entries = CloudClient.List(url, string.Empty);
+                bool found = false;
+                foreach (CloudEntry entry in entries)
+                {
+                    if (entry.Name == System.IO.Path.GetFileName(localFile)) found = true;
+                }
+                Report(report, "出现在文件列表 = " + found + "（共 " + entries.Count + " 个文件）");
+                Report(report, found ? "UPLOADTEST OK" : "UPLOADTEST FAILED");
+                return found ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                LogCrash(ex);
+                Report(report, "uploadtest failed: " + ex.Message);
+                return 1;
+            }
+        }
+
         private static int CloudTest(string url)
         {
             if (string.IsNullOrEmpty(url))

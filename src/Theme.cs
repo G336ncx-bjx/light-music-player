@@ -206,6 +206,13 @@ namespace LightMusic
                 + "M12 10.8 A1.2 1.2 0 1 0 12 13.2 A1.2 1.2 0 1 0 12 10.8 Z "
                 + "M18.6 10.8 A1.2 1.2 0 1 0 18.6 13.2 A1.2 1.2 0 1 0 18.6 10.8 Z", true, 0);
             m["dot"] = new Def("M12 9.6 A2.4 2.4 0 1 0 12 14.4 A2.4 2.4 0 1 0 12 9.6 Z", true, 0);
+            m["upload"] = new Def("M12 16.4 V4.4 M12 4.4 L8 8.4 M12 4.4 L16 8.4 "
+                + "M4 15.6 V19 A1.4 1.4 0 0 0 5.4 20.4 H18.6 A1.4 1.4 0 0 0 20 19 V15.6", false, 1.8);
+            m["palette"] = new Def("M12 3.6 A8.4 8.4 0 1 0 12 20.4 C13.6 20.4 14 19.4 13.4 18.4 "
+                + "C12.8 17.4 13.4 16.4 14.6 16.4 H16.4 A4 4 0 0 0 20.4 12.4 C20.4 7.6 16.6 3.6 12 3.6 Z "
+                + "M7.6 11.2 A1.1 1.1 0 1 0 7.6 13.4 A1.1 1.1 0 1 0 7.6 11.2 Z "
+                + "M10.4 7.4 A1.1 1.1 0 1 0 10.4 9.6 A1.1 1.1 0 1 0 10.4 7.4 Z "
+                + "M15 7.6 A1.1 1.1 0 1 0 15 9.8 A1.1 1.1 0 1 0 15 7.6 Z", false, 1.6);
             return m;
         }
 
@@ -354,6 +361,8 @@ namespace LightMusic
             {
                 if (i > 0 && spacing > 0) children[i].SetValue(FrameworkElement.MarginProperty,
                     new Thickness(spacing, 0, 0, 0));
+                // 行内元素统一垂直居中，避免文字贴顶、按钮居中的错位
+                children[i].SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
                 panel.Children.Add(children[i]);
             }
             return panel;

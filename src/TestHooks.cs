@@ -66,7 +66,12 @@ namespace LightMusic
                 song.Size = 9000000;
                 song.IsCloud = true;
                 song.CloudPath = "/" + song.FileName;
-                if (lyricPath != null) song.LyricPath = lyricPath;
+                if (lyricPath != null)
+                {
+                    song.LyricPath = lyricPath;
+                    // 云盘歌曲的歌词文本是扫描时后台取回来的，这里直接填好方便截图
+                    try { song.LyricText = File.ReadAllText(lyricPath); } catch (Exception) { }
+                }
                 library.Add(song);
             }
             ApplyFilter();
@@ -80,7 +85,7 @@ namespace LightMusic
             currentSong = queue[queueIndex];
             UpdateCurrentFlags();
             lyricsView.Load(currentSong);
-            lyricsView.SetActive(2);
+            lyricsView.SetActive(view == "lyrics-late" ? 45 : 2);
 
             double total = 0;
             foreach (Song song in library) total += song.Duration;
@@ -98,7 +103,7 @@ namespace LightMusic
             progressSlider.Value = 96;
             positionText.Text = "1:36";
             durationText.Text = "/ 4:29";
-            ShowView(view);
+            ShowView(view == "lyrics-late" ? "lyrics" : view);
         }
     }
 }

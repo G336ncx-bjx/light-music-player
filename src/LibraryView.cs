@@ -42,7 +42,10 @@ namespace LightMusic
 
             Button playAll = IconTextButton("play", "播放全部", "PrimaryButton", delegate { PlayAll(); });
             Button shuffleAll = IconTextButton("shuffle", "随机播放", "OutlineButton", delegate { ShuffleAll(); });
-            StackPanel headActions = Ui.Row(8, playAll, shuffleAll);
+            Button upload = IconTextButton("upload", "上传歌曲", "OutlineButton",
+                delegate { main.PickAndUploadFiles(); });
+            upload.ToolTip = "把本地歌曲 / 歌词上传到云盘分享目录（也可以直接把文件拖进窗口）";
+            StackPanel headActions = Ui.Row(8, upload, shuffleAll, playAll);
             headActions.VerticalAlignment = VerticalAlignment.Center;
 
             Grid headRow = new Grid();
@@ -299,11 +302,8 @@ namespace LightMusic
         {
             ListBoxItem item = FindItem(e.OriginalSource as DependencyObject);
             if (item == null) return;
-            if (!item.IsSelected)
-            {
-                list.SelectedItems.Clear();
-                item.IsSelected = true;
-            }
+            // 单选模式下只能用 SelectedItem / IsSelected
+            if (!item.IsSelected) item.IsSelected = true;
         }
 
         private void OnContextMenu(object sender, ContextMenuEventArgs e)
