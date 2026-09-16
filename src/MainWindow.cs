@@ -881,7 +881,7 @@ namespace LightMusic
             grid.ColumnDefinitions.Add(new ColumnDefinition());
             grid.ColumnDefinitions[1].Width = Ui.Stars(1);
             grid.ColumnDefinitions.Add(new ColumnDefinition());
-            grid.ColumnDefinitions[2].Width = Ui.Px(210);
+            grid.ColumnDefinitions[2].Width = Ui.Px(250);
 
             // 左：封面 + 歌曲信息
             Border cover = new Border();

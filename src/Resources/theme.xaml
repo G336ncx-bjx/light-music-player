@@ -619,7 +619,7 @@
     <Style x:Key="ColumnHeader" TargetType="Button" BasedOn="{StaticResource GhostButton}">
         <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
         <Setter Property="FontSize" Value="12" />
-        <Setter Property="Padding" Value="4,4" />
+        <Setter Property="Padding" Value="0,4,0,4" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="Template">
             <Setter.Value>
