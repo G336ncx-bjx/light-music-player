@@ -342,10 +342,6 @@ namespace Skylark
         [DataMember(Name = "lyricPageSize", Order = 41)]
         public double LyricPageFontSize { get; set; }
 
-        /// <summary>桌面歌词的「下一句」怎么显示：0 不显示 / 1 小一号 / 2 同样大小（默认）。</summary>
-        [DataMember(Name = "lyricNextLine", Order = 42)]
-        public int LyricNextLineMode { get; set; }
-
         /// <summary>桌面歌词文字的描边（阴影）强度：0 关 / 1 弱（默认）/ 2 强。</summary>
         [DataMember(Name = "lyricShadow", Order = 43)]
         public int LyricShadowMode { get; set; }
@@ -370,7 +366,6 @@ namespace Skylark
             SortAscending = true;
             LyricFontSize = 34;
             LyricPageFontSize = 16;
-            LyricNextLineMode = 1;
             LyricShadowMode = 1;
             LyricColor = "#FFFFFF";
             LyricOpacity = 1.0;

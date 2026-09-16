@@ -17,9 +17,6 @@ namespace Skylark
         private readonly Slider fontSizeSlider = new Slider();
         private readonly Slider opacitySlider = new Slider();
         private readonly Slider pageSizeSlider = new Slider();
-        private RadioButton nextOff;
-        private RadioButton nextSmall;
-        private RadioButton nextSame;
         private RadioButton shadowOff;
         private RadioButton shadowWeak;
         private RadioButton shadowStrong;
@@ -355,23 +352,6 @@ namespace Skylark
         }
 
         /// <summary>切换缓存开关：1 只留正在听的和下一首（默认） / 2 听过的歌都留在本机。</summary>
-        private void SetNextLineMode(int mode)
-        {
-            main.Settings.LyricNextLineMode = mode;
-            main.SaveSettings();
-            SyncNextLineMode();
-            ApplyDesktopLyrics();
-        }
-
-        private void SyncNextLineMode()
-        {
-            int mode = main.Settings.LyricNextLineMode;
-            if (nextOff == null) return;
-            nextOff.IsChecked = mode == 0;
-            nextSmall.IsChecked = mode == 1;
-            nextSame.IsChecked = mode == 2;
-        }
-
         /// <summary>文字描边（阴影）：0 关 / 1 弱 / 2 强。</summary>
         private void SetShadowMode(int mode)
         {
@@ -550,18 +530,6 @@ namespace Skylark
             pageSizeLabel.VerticalAlignment = VerticalAlignment.Center;
             StackPanel pageFontRow = Ui.Row(10, pageSizeSlider, pageSizeLabel);
 
-            // 桌面歌词的「下一句」：默认和主行一样大，看得清
-            nextOff = new RadioButton();
-            nextOff.Content = "不显示";
-            nextSmall = new RadioButton();
-            nextSmall.Content = "小一号";
-            nextSame = new RadioButton();
-            nextSame.Content = "同样大小";
-            StackPanel nextRow = Segmented(nextOff, nextSmall, nextSame);
-            nextOff.Click += delegate { SetNextLineMode(0); };
-            nextSmall.Click += delegate { SetNextLineMode(1); };
-            nextSame.Click += delegate { SetNextLineMode(2); };
-
             // 文字描边：锁定时没有底色，描边是保证看得清的关键；嫌黑可以关掉
             shadowOff = new RadioButton();
             shadowOff.Content = "关";
@@ -610,7 +578,6 @@ namespace Skylark
             return Card("桌面歌词",
                 StackedRow("歌词字号", "", fontRow),
                 StackedRow("歌词页字号", "", pageFontRow),
-                StackedRow("下一句", "", nextRow),
                 StackedRow("文字描边", "", shadowRow),
                 StackedRow("不透明度", "", opacityRow),
                 StackedRow("歌词颜色", "", Ui.Column(0, colorRow, colorHint)),
@@ -779,7 +746,6 @@ namespace Skylark
             fontSizeLabel.Text = ((int)s.LyricFontSize) + " px";
             pageSizeSlider.Value = s.LyricPageFontSize;
             pageSizeLabel.Text = ((int)s.LyricPageFontSize) + " px";
-            SyncNextLineMode();
             SyncShadowMode();
             opacitySlider.Value = s.LyricOpacity * 100;
             opacityLabel.Text = ((int)(s.LyricOpacity * 100)) + "%";

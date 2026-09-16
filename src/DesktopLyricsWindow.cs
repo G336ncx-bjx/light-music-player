@@ -68,7 +68,7 @@ namespace Skylark
             frame.Background = Brushes.Transparent;
 
             // 当前句用 Bold、第二行用 SemiBold：两句一样亮，靠字重和位置区分
-            Configure(currentText, 34, FontWeights.Bold);
+            Configure(currentText, 34, FontWeights.SemiBold);
             Configure(translationText, 18, FontWeights.SemiBold);
             translationText.Margin = new Thickness(0, 2, 0, 0);
 
@@ -231,13 +231,16 @@ namespace Skylark
             if (locked) ShowUnlockButton();
         }
 
-        /// <summary>第二行（译文 / 下一句）的字号，统一按设置里的「下一句」选项算。</summary>
+        /// <summary>
+        /// 第二行（译文 / 下一句）：**只比当前句小**（差得足够看出来，但不是小到看不清），
+        /// 字重、颜色、亮度都和当前句一致。
+        /// 不用压暗、也不用额外标记——一眼就能看出上面那行是正在唱的那句。
+        /// </summary>
         private void ApplySecondaryFontSize()
         {
-            bool same = main.Settings.LyricNextLineMode == 2;
-            translationText.FontSize = same
-                ? currentText.FontSize
-                : Math.Max(18, currentText.FontSize * 0.84);
+            translationText.FontSize = Math.Max(16, currentText.FontSize * 0.74);
+            translationText.FontWeight = currentText.FontWeight;
+            translationText.Opacity = 1.0;
         }
 
         /// <summary>文字描边（阴影）：0 关 / 1 弱 / 2 强。锁定时没有底色，全靠它保证看得清。</summary>
@@ -310,48 +313,29 @@ namespace Skylark
             SetCurrentText(lines[index].Text);
             if (!string.IsNullOrEmpty(lines[index].Translation) && main.Settings.LyricShowTranslation)
             {
-                // 有译文：只显示这一句（原文在上、译文在下，同样大小）
+                // 有译文：只显示这一句，译文比原文小一点
                 translationText.Text = lines[index].Translation;
-                translationText.FontSize = currentText.FontSize;
-                translationText.FontWeight = currentText.FontWeight;
-                translationText.Opacity = 0.92;
+                ApplySecondaryFontSize();
                 translationText.Visibility = Visibility.Visible;
             }
             else
             {
-                // 没有译文：显示下一句作为预览（按设置在 不显示 / 小一号 / 同样大小 之间选）
-                int nextMode = main.Settings.LyricNextLineMode;
-                if (nextMode == 0 || index + 1 >= lines.Count)
+                // 没有译文：显示下一句作为预览（比当前句小一点，其它完全一致）
+                if (index + 1 >= lines.Count)
                 {
                     translationText.Visibility = Visibility.Collapsed;
                     return;
                 }
                 translationText.Text = lines[index + 1].Text;
-                // 两句亮度一致（不压暗），靠字号 + 当前句下面那条短条区分主次
                 ApplySecondaryFontSize();
-                // 字重都用 SemiBold：Normal 在大字号下中文字形太细，看着像没写清楚
-                translationText.FontWeight = FontWeights.SemiBold;
-                translationText.Opacity = 1.0;
                 translationText.Visibility = Visibility.Visible;
             }
         }
 
-        /// <summary>
-        /// 设置当前句文本；换句时给一个 240ms 的淡入 + 轻微放大，
-        /// 让人一眼看出「刚跳到哪一行」，而不用把另外一行压暗。
-        /// </summary>
         private void SetCurrentText(string text)
         {
             if (currentText.Text == text) return;
             currentText.Text = text;
-            ScaleTransform scale = new ScaleTransform(1, 1);
-            currentText.RenderTransformOrigin = new Point(0.5, 0.5);
-            currentText.RenderTransform = scale;
-            DoubleAnimation fade = new DoubleAnimation(0.35, 1.0, TimeSpan.FromMilliseconds(240));
-            DoubleAnimation grow = new DoubleAnimation(0.94, 1.0, TimeSpan.FromMilliseconds(240));
-            currentText.BeginAnimation(OpacityProperty, fade);
-            scale.BeginAnimation(ScaleTransform.ScaleXProperty, grow);
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, grow);
         }
 
         /// <summary>短暂提示（例如「已锁定」）。</summary>
