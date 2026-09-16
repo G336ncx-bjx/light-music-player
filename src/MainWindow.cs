@@ -21,7 +21,7 @@ namespace Skylark
     public partial class MainWindow : Window
     {
         public const string AppName = "云雀";
-        public const string AppVersion = "3.1.0";
+        public const string AppVersion = "3.2.0";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -84,6 +84,7 @@ namespace Skylark
             settings = SettingsStore.Load();
             Theme.Apply(settings.Theme);
             Theme.EnsureStyles();
+            TrimCloudCacheOnStart();
 
             Title = AppName;
             Width = 1180;
@@ -1405,6 +1406,22 @@ namespace Skylark
             ShowToast("已清理云端缓存");
         }
 
+        /// <summary>按当前的本地占用策略立刻清一遍（设置里切换后调用）。</summary>
+        public void PruneCloudCacheNow()
+        {
+            if (settings.CloudCacheMode == 2) return;
+            if (settings.CloudCacheMode == 0)
+            {
+                CloudCache.Clear();
+            }
+            else
+            {
+                PruneCloudCache(currentSong);
+            }
+            UpdateStatusText();
+            Raise(SettingsChanged);
+        }
+
         #region 上传到云盘
 
         private void OnDropFiles(object sender, DragEventArgs e)
@@ -1593,6 +1610,7 @@ namespace Skylark
             if (song == null) return;
             ReleaseOldCloudCache(song);
             currentSong = song;
+            PruneCloudCache(song);
             UpdateCurrentFlags();
             if (lyricsView != null) lyricsView.Load(song);
             if (titleText != null) titleText.Text = song.Title;
@@ -1774,6 +1792,7 @@ namespace Skylark
         private void PrefetchNext()
         {
             if (!IsCloudSource || queue.Count == 0) return;
+            if (settings.CloudCacheMode != 2) return;   // 不开缓存就不预取，免得白占本地
             int next = queueIndex + 1;
             if (next >= queue.Count) next = settings.Mode == PlayMode.ListLoop ? 0 : -1;
             if (next < 0 || next >= queue.Count) return;
@@ -1802,7 +1821,7 @@ namespace Skylark
         /// </summary>
         private void ReleaseOldCloudCache(Song next)
         {
-            if (settings.CloudCacheEnabled) return;
+            if (settings.CloudCacheMode == 2) return;
             Song previous = currentSong;
             if (previous == null || !previous.IsCloud) return;
             if (next != null && object.ReferenceEquals(next, previous)) return;
@@ -1811,6 +1830,58 @@ namespace Skylark
             {
                 engine.Close();
                 if (File.Exists(path)) File.Delete(path);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// 空间策略：不开缓存时，本机只留正在听的那一首，其余文件删掉；
+        /// .part 是正在下载的临时文件，跳过。
+        /// </summary>
+        private void PruneCloudCache(Song keepCurrent)
+        {
+            if (settings.CloudCacheMode == 2) return;
+            try
+            {
+                string a = keepCurrent != null && keepCurrent.IsCloud ? CloudCache.FileFor(keepCurrent) : null;
+                foreach (string file in System.IO.Directory.GetFiles(CloudCache.Directory))
+                {
+                    if (file.EndsWith(".part", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (a != null && string.Equals(file, a, StringComparison.OrdinalIgnoreCase)) continue;
+                    try { File.Delete(file); }
+                    catch (Exception) { }
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// 启动时收尾：没开缓存时，本机最多留最近用过的那一个文件。
+        /// 正常退出已经收过一次，这里主要防崩溃 / 断电留下的残留。
+        /// </summary>
+        private void TrimCloudCacheOnStart()
+        {
+            int mode = settings.CloudCacheMode;
+            if (mode == 2) return;
+            try
+            {
+                string[] files = System.IO.Directory.GetFiles(CloudCache.Directory);
+                int keep = 1;   // 最多留正在听的那一首
+                if (files.Length <= keep) return;
+                Array.Sort(files, delegate(string x, string y)
+                {
+                    return File.GetLastWriteTimeUtc(y).CompareTo(File.GetLastWriteTimeUtc(x));
+                });
+                for (int i = keep; i < files.Length; i++)
+                {
+                    if (files[i].EndsWith(".part", StringComparison.OrdinalIgnoreCase)) continue;
+                    try { File.Delete(files[i]); }
+                    catch (Exception) { }
+                }
             }
             catch (Exception)
             {
@@ -2203,6 +2274,7 @@ namespace Skylark
             if (timer != null) timer.Stop();
             TraceStep("closed: engine");
             engine.Close();
+            if (settings.CloudCacheMode != 2) CloudCache.Clear();   // 不开缓存：退出时清干净
             TraceStep("closed: tray");
             if (tray != null)
             {

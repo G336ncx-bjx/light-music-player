@@ -327,9 +327,23 @@ namespace Skylark
         [DataMember(Name = "cloudToken", Order = 38)]
         public string CloudToken { get; set; }
 
-        /// <summary>云端歌曲播放时是否保留本地缓存（缓存后可离线重听）。</summary>
+        /// <summary>（v3.1 及以前）云端歌曲播放时是否保留本地缓存。</summary>
         [DataMember(Name = "cloudCache", Order = 37)]
         public bool CloudCacheEnabled { get; set; }
+
+        /// <summary>
+        /// 本地占用策略：0 不落地（只在线播） / 1 只留正在听的和下一首（默认） / 2 听过的都留。
+        /// 老配置里只有 cloudCache 开关，由 SettingsStore.Load 负责迁移。
+        /// </summary>
+        [DataMember(Name = "cloudCacheMode", Order = 40)]
+        public int CloudCacheModeValue { get; set; }
+
+        /// <summary>本地占用策略（对外用这个）。</summary>
+        public int CloudCacheMode
+        {
+            get { return CloudCacheModeValue < 0 || CloudCacheModeValue > 2 ? 1 : CloudCacheModeValue; }
+            set { CloudCacheModeValue = value < 0 ? 0 : (value > 2 ? 2 : value); }
+        }
 
         /// <summary>可选的 ffmpeg 路径：用于把 FLAC / OGG 等格式自动转成 MP3 播放。</summary>
         [DataMember(Name = "ffmpegPath", Order = 39)]
@@ -361,7 +375,9 @@ namespace Skylark
             Source = "cloud";
             CloudUrl = string.Empty;
             CloudToken = string.Empty;
-            CloudCacheEnabled = true;
+            // 默认不缓存：Windows 的播放内核不支持网络流，只能临时下载正在听的那一首
+            CloudCacheModeValue = 0;
+            CloudCacheEnabled = false;
             FfmpegPath = string.Empty;
             CloseToTray = false;
             ResumeLast = true;

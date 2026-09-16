@@ -30,6 +30,7 @@ namespace Skylark
         private readonly TextBlock tokenStatus = Ui.Text("", 12.5, "TextDim");
         private readonly TextBlock cloudStatus = Ui.Text("", 11.5, "TextMuted");
         private readonly TextBlock cacheInfo = Ui.Text("", 11.5, "TextMuted");
+        private TextBlock cacheHint;
         private readonly CheckBox cloudCacheCheck = new CheckBox();
         private readonly TextBlock ffmpegStatus = Ui.Text("", 12, "TextMuted");
         private readonly WrapPanel colorRow = new WrapPanel();
@@ -275,16 +276,11 @@ namespace Skylark
             cloudStatus.TextWrapping = TextWrapping.Wrap;
 
             cloudCacheCheck.Style = (Style)Application.Current.Resources["ModernCheckBox"];
-            cloudCacheCheck.Content = "播放时缓存到本地（缓存后可离线重听、即点即播）";
+            cloudCacheCheck.Content = "把听过的歌缓存到本机（可离线播放）";
             cloudCacheCheck.Click += delegate
             {
-                main.Settings.CloudCacheEnabled = cloudCacheCheck.IsChecked == true;
-                main.SaveSettings();
-                if (!main.Settings.CloudCacheEnabled)
-                {
-                    main.ClearCloudCache();
-                    cacheInfo.Text = "缓存占用：0 MB";
-                }
+                // 勾选 = 听过的歌都留在本机；不勾选 = 不缓存
+                SetCacheMode(cloudCacheCheck.IsChecked == true ? 2 : 0);
             };
             Button clearCache = Ui.Button("清理缓存", "OutlineButton", delegate
             {
@@ -293,11 +289,14 @@ namespace Skylark
             });
             StackPanel cacheRow = Ui.Row(12, cloudCacheCheck, cacheInfo, clearCache);
 
+            cacheHint = Ui.Text("", 11.5, "TextMuted");
+            cacheHint.TextWrapping = TextWrapping.Wrap;
+            cacheHint.Margin = new Thickness(0, 6, 0, 0);
+
             TextBlock hint = Ui.Text(
                 "两种连接方式二选一即可：分享链接（形如 https://cloud.tsinghua.edu.cn/d/xxxxxxxxxxxx/）"
                 + "或下面那行 API 令牌，只填一个就能用；两个都填则以令牌为准，并可以直接删除云端文件。"
-                + "点「刷新列表」即可看到云端的歌：播放时自动下载到本地缓存，下次播放同一首就是本地播放，"
-                + "也会自动预取队列里的下一首。",
+                + "点「刷新列表」即可看到云端的歌。",
                 11.5, "TextMuted");
             hint.TextWrapping = TextWrapping.Wrap;
             hint.LineHeight = 20;
@@ -340,10 +339,39 @@ namespace Skylark
                 Row("API 令牌", "可选，填了就用令牌（可删除云端文件）", tokenRow),
                 cloudStatus,
                 cacheRow,
+                cacheHint,
                 ffmpegRow,
                 hiddenRow,
                 hint,
                 tokenHint);
+        }
+
+        /// <summary>切换缓存开关：0 不缓存 / 2 听过的歌都留在本机。</summary>
+        private void SetCacheMode(int mode)
+        {
+            main.Settings.CloudCacheMode = mode;
+            main.SaveSettings();
+            main.PruneCloudCacheNow();
+            SyncCacheMode();
+            cacheInfo.Text = CacheText();
+            main.ShowToast(mode == 2 ? "已开启缓存：听过的歌都留在本机" : "已关闭缓存");
+        }
+
+        private void SyncCacheMode()
+        {
+            int mode = main.Settings.CloudCacheMode;
+            if (cloudCacheCheck != null) cloudCacheCheck.IsChecked = mode == 2;
+            if (cacheHint == null) return;
+            if (mode == 2)
+            {
+                cacheHint.Text = "已开启：听过的歌都留在本机，可以离线重听、即点即播，也会预取下一首；"
+                    + "占的空间会随听过的歌增加，随时可以点「清理缓存」清掉。";
+            }
+            else
+            {
+                cacheHint.Text = "未开启（默认）：不缓存。Windows 的 WPF 播放内核不支持网络流，"
+                    + "所以必须临时下载正在听的这一首，切歌或退出程序立刻删掉，磁盘上最多只短暂存在一首歌。";
+            }
         }
 
         private static string CacheText()
@@ -654,7 +682,7 @@ namespace Skylark
             if (cloudUrlBox.Text != (s.CloudUrl == null ? string.Empty : s.CloudUrl))
                 cloudUrlBox.Text = s.CloudUrl == null ? string.Empty : s.CloudUrl;
             if (cloudTokenBox.Visibility != Visibility.Visible) UpdateTokenStatus();
-            cloudCacheCheck.IsChecked = s.CloudCacheEnabled;
+            SyncCacheMode();
             cacheInfo.Text = CacheText();
             string ffmpeg = Ffmpeg.Locate(s.FfmpegPath);
             ffmpegStatus.Text = string.IsNullOrEmpty(ffmpeg)

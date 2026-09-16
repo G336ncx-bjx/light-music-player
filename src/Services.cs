@@ -806,6 +806,9 @@ namespace Skylark
                     if (s.Durations == null) s.Durations = new List<DurationEntry>();
                     if (string.IsNullOrEmpty(s.Theme)) s.Theme = "dark";
                     if (s.LyricFontSize < 16 || s.LyricFontSize > 96) s.LyricFontSize = 34;
+                    // v3.2 起用 cloudCacheMode（0 不缓存 / 2 听过的歌都留）代替老的 cloudCache 开关
+                    if (s.CloudCacheEnabled) s.CloudCacheModeValue = 2;
+                    else if (s.CloudCacheModeValue != 2) s.CloudCacheModeValue = 0;
                     return s;
                 }
             }
@@ -819,6 +822,8 @@ namespace Skylark
         {
             try
             {
+                // 老的 cloudCache 开关继续同步写，保证旧版本读到的新配置也说得通
+                settings.CloudCacheEnabled = settings.CloudCacheMode == 2;
                 string file = AppPaths.SettingsFile;
                 string tmp = file + ".tmp";
                 using (FileStream fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
