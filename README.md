@@ -6,6 +6,15 @@
 
 ![音乐库](docs/screenshots/library-dark.png)
 
+## 下载
+
+不想自己编译的话，直接到 [Releases](https://github.com/G336ncx-bjx/light-music-player/releases) 下载：
+
+- `LightMusic.exe`：单文件绿色版，下载后双击即可运行（Windows 10 / 11）。
+- `LightMusic-win-x64.zip`：exe + 使用说明的压缩包。
+
+下载后如果想让桌面有个快捷方式，运行 `scripts\install.ps1`（或手动给 exe 发送快捷方式到桌面）即可。
+
 ## 功能
 
 - **歌曲列表**：自动扫描音乐文件夹，按「歌名 - 歌手.mp3」解析歌名与歌手（支持一位或多位歌手）；可搜索、可按序号 / 歌曲 / 歌手 / 时长排序。

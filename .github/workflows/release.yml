@@ -1,0 +1,61 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build (system csc.exe)
+        shell: powershell
+        run: .\build.ps1
+
+      - name: Self test
+        shell: powershell
+        run: |
+          $p = Start-Process -FilePath .\dist\LightMusic.exe -ArgumentList '--selftest' -PassThru -Wait
+          Get-Content "$env:TEMP\lightmusic-selftest.log" -Encoding UTF8
+          if ($p.ExitCode -ne 0) { throw "selftest failed (exit $($p.ExitCode))" }
+
+      - name: Package
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item .\dist\LightMusic.exe .\release\LightMusic.exe
+          Copy-Item .\README.md .\release\使用说明.md
+          Compress-Archive -Path .\release\* -DestinationPath .\LightMusic-win-x64.zip -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LightMusic-win-x64
+          path: |
+            dist/LightMusic.exe
+            LightMusic-win-x64.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 轻音乐 ${{ github.ref_name }}
+          body: |
+            轻量级 Windows 本地音乐播放器：**单个 exe、零依赖、双击即用**。
+
+            下载下面的 `LightMusic.exe` 直接运行即可（也可以下载 zip 压缩包，解压后运行）。
+            程序不会联网、不上传数据，音乐与歌词都读取本地文件夹。
+
+            首次运行会自动寻找 `music` 文件夹（exe 同级 → 逐级向上 → 系统的「音乐」目录），也可以在「设置」里手动指定。
+          files: |
+            dist/LightMusic.exe
+            LightMusic-win-x64.zip
+          generate_release_notes: true
