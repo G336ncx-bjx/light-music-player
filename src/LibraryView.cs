@@ -325,6 +325,10 @@ namespace LightMusic
             menu.Items.Add(MenuItemFor("添加到播放队列", delegate { main.Enqueue(song, false); }));
             menu.Items.Add(new Separator());
             menu.Items.Add(MenuItemFor("在资源管理器中显示", delegate { main.RevealInExplorer(song); }));
+            if (main.CanDeleteCloud && song.IsCloud)
+            {
+                menu.Items.Add(MenuItemFor("从云盘删除…", delegate { main.DeleteFromCloud(song); }));
+            }
             menu.Items.Add(MenuItemFor("从音乐库移除", delegate { main.RemoveFromLibrary(song); }));
             return menu;
         }

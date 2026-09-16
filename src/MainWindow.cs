@@ -21,7 +21,7 @@ namespace LightMusic
     public partial class MainWindow : Window
     {
         public const string AppName = "轻音乐";
-        public const string AppVersion = "1.3.0";
+        public const string AppVersion = "1.4.0";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -467,9 +467,9 @@ namespace LightMusic
             if (scanning) return;
             if (settings.Source == "cloud")
             {
-                if (string.IsNullOrEmpty(settings.CloudUrl))
+                if (string.IsNullOrEmpty(CloudEndpoint))
                 {
-                    ShowToast("请先在设置里填写云盘分享链接");
+                    ShowToast("请先在设置里填写云盘分享链接或 API 令牌");
                     return;
                 }
                 scanning = true;
@@ -494,14 +494,30 @@ namespace LightMusic
             });
         }
 
+        /// <summary>云盘连接方式：填了 API 令牌就用令牌，否则用分享链接。</summary>
+        public string CloudEndpoint
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(settings.CloudToken)) return settings.CloudToken.Trim();
+                return settings.CloudUrl == null ? string.Empty : settings.CloudUrl.Trim();
+            }
+        }
+
+        /// <summary>是否可以使用 API 令牌删除云端文件。</summary>
+        public bool CanDeleteCloud
+        {
+            get { return CloudClient.IsApiToken(CloudEndpoint); }
+        }
+
         public bool IsCloudSource
         {
-            get { return settings.Source == "cloud" && !string.IsNullOrEmpty(settings.CloudUrl); }
+            get { return !string.IsNullOrEmpty(CloudEndpoint); }
         }
 
         private void RescanCloud()
         {
-            string url = settings.CloudUrl;
+            string url = CloudEndpoint;
             List<DurationEntry> cache = settings.Durations;
             List<string> hidden = settings.Hidden;
             ShowToast("正在读取云盘文件列表…");
@@ -530,7 +546,7 @@ namespace LightMusic
         private void FillCloudDetails()
         {
             if (!IsCloudSource || library.Count == 0) return;
-            string url = settings.CloudUrl;
+            string url = CloudEndpoint;
             List<Song> songs = new List<Song>(library);
             ThreadPool.QueueUserWorkItem(delegate
             {
@@ -1097,10 +1113,10 @@ namespace LightMusic
             {
                 SetMusicDirForFirstRun();
             }
-            else if (string.IsNullOrEmpty(settings.CloudUrl))
+            else if (string.IsNullOrEmpty(CloudEndpoint))
             {
                 ShowView("settings");
-                ShowToast("请先粘贴云盘分享链接，再点「刷新列表」");
+                ShowToast("请先粘贴云盘分享链接或 API 令牌，再点「刷新列表」");
             }
             Rescan();
             timer = new DispatcherTimer();
@@ -1204,7 +1220,9 @@ namespace LightMusic
             }
             if (dirLabel != null)
             {
-                dirLabel.Text = IsCloudSource ? "云盘：" + settings.CloudUrl : settings.MusicDir;
+                dirLabel.Text = IsCloudSource
+                    ? (CanDeleteCloud ? "云盘（API 令牌）：" : "云盘（分享链接）：") + CloudEndpoint
+                    : settings.MusicDir;
             }
         }
 
@@ -1221,6 +1239,87 @@ namespace LightMusic
         {
             settings.CloudUrl = url == null ? string.Empty : url.Trim();
             SaveSettings();
+        }
+
+        public void SetCloudToken(string token)
+        {
+            settings.CloudToken = token == null ? string.Empty : token.Trim();
+            SaveSettings();
+        }
+
+        /// <summary>删除云盘上的歌曲文件（仅在配置了 API 令牌时可用）。</summary>
+        public void DeleteFromCloud(Song song)
+        {
+            if (song == null || !song.IsCloud) return;
+            if (!CanDeleteCloud)
+            {
+                ShowToast("删除云端文件需要 API 令牌（见设置 → 云端音乐）");
+                return;
+            }
+
+            MessageBoxResult confirm = MessageBox.Show(this,
+                "确定要从云盘删除「" + song.Title + "」吗？\n\n文件名：" + song.FileName
+                + "\n删除后云端文件会进入云盘的回收站。",
+                "从云盘删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.OK) return;
+
+            string token = CloudEndpoint;
+            string cloudPath = song.CloudPath;
+            string parent = "/";
+            int slash = cloudPath.LastIndexOf('/');
+            if (slash > 0) parent = cloudPath.Substring(0, slash);
+            string name = cloudPath.Substring(slash + 1);
+
+            ShowToast("正在从云盘删除：" + song.FileName);
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string error = null;
+                try
+                {
+                    List<string> names = new List<string>();
+                    names.Add(name);
+                    CloudClient.DeleteFiles(token, parent, names);
+                }
+                catch (Exception ex)
+                {
+                    error = ex.Message;
+                }
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    if (error == null)
+                    {
+                        CloudCache.Remove(song);
+                        ShowToast("已从云盘删除：" + song.Title);
+                        Rescan();
+                    }
+                    else
+                    {
+                        ShowToast("删除失败：" + error);
+                    }
+                });
+            });
+        }
+
+        /// <summary>检测 API 令牌对应的资料库信息。</summary>
+        public void TestCloudToken(string token, Action<bool, string> done)
+        {
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                bool ok = false;
+                string message;
+                try
+                {
+                    CloudRepoInfo info = CloudClient.GetRepoInfo(token);
+                    ok = true;
+                    message = "已连接资料库「" + info.Name + "」，共 " + info.FileCount + " 个文件（"
+                        + (info.Size / 1024 / 1024) + " MB）";
+                }
+                catch (Exception ex)
+                {
+                    message = "令牌无效或网络异常：" + ex.Message;
+                }
+                if (done != null) Dispatcher.BeginInvoke((Action)delegate { done(ok, message); });
+            });
         }
 
         /// <summary>测试云盘链接是否可用（后台执行，回调在 UI 线程）。</summary>
@@ -1331,7 +1430,7 @@ namespace LightMusic
             }
 
             uploading = true;
-            string url = settings.CloudUrl;
+            string url = CloudEndpoint;
             List<string> batch = files;
             if (statusText != null) statusText.Text = "正在上传 0/" + batch.Count + "…";
 
@@ -1484,7 +1583,7 @@ namespace LightMusic
         /// <summary>云盘歌曲：先下载到本地缓存再播放，并显示进度。</summary>
         private void StartCloudBuffering(Song song, bool autoPlay, double startAt)
         {
-            string url = settings.CloudUrl;
+            string url = CloudEndpoint;
             string target = CloudCache.FileFor(song);
             if (artistText != null) artistText.Text = "正在缓冲… 0%";
             ShowToast("正在缓冲云端歌曲：" + song.Title);
@@ -1498,6 +1597,7 @@ namespace LightMusic
             {
                 try
                 {
+                    TraceStep("buffer start: " + song.FileName + " -> " + target);
                     CloudClient.DownloadTo(url, song.CloudPath, target, delegate(long done, long total)
                     {
                         int percent = total > 0 ? (int)(done * 100 / total) : 0;
@@ -1511,6 +1611,7 @@ namespace LightMusic
 
                     Dispatcher.BeginInvoke((Action)delegate
                     {
+                        TraceStep("buffer done: " + target);
                         if (bufferingBar != null) bufferingBar.Visibility = Visibility.Collapsed;
                         if (currentSong != song) return;
                         try
@@ -1529,6 +1630,7 @@ namespace LightMusic
                 }
                 catch (Exception ex)
                 {
+                    TraceStep("buffer failed: " + ex.Message);
                     Dispatcher.BeginInvoke((Action)delegate
                     {
                         if (bufferingBar != null) bufferingBar.Visibility = Visibility.Collapsed;
@@ -1550,7 +1652,7 @@ namespace LightMusic
             if (song == null || !song.IsCloud || song == currentSong) return;
             if (CloudCache.CachedPath(song) != null) return;
 
-            string url = settings.CloudUrl;
+            string url = CloudEndpoint;
             ThreadPool.QueueUserWorkItem(delegate
             {
                 try
@@ -1781,7 +1883,7 @@ namespace LightMusic
             {
                 try
                 {
-                    System.Diagnostics.Process.Start(CloudClient.ShareUrl(settings.CloudUrl));
+                    System.Diagnostics.Process.Start(CloudClient.ShareUrl(CloudEndpoint));
                 }
                 catch (Exception)
                 {

@@ -51,6 +51,61 @@ namespace LightMusic
         public List<DirentDto> Items { get; set; }
     }
 
+    /// <summary>资料库 API 令牌模式下的目录条目（字段名与分享链接不同）。</summary>
+    [DataContract]
+    internal class TokenDirentDto
+    {
+        [DataMember(Name = "type")]
+        public string Type { get; set; }
+
+        [DataMember(Name = "name")]
+        public string Name { get; set; }
+
+        [DataMember(Name = "parent_dir")]
+        public string ParentDir { get; set; }
+
+        [DataMember(Name = "size")]
+        public long Size { get; set; }
+
+        [DataMember(Name = "mtime")]
+        public string Modified { get; set; }
+    }
+
+    [DataContract]
+    internal class TokenDirDto
+    {
+        [DataMember(Name = "repo_name")]
+        public string RepoName { get; set; }
+
+        [DataMember(Name = "dirent_list")]
+        public List<TokenDirentDto> Items { get; set; }
+    }
+
+    [DataContract]
+    internal class TokenRepoInfoDto
+    {
+        [DataMember(Name = "repo_id")]
+        public string RepoId { get; set; }
+
+        [DataMember(Name = "repo_name")]
+        public string RepoName { get; set; }
+
+        [DataMember(Name = "size")]
+        public long Size { get; set; }
+
+        [DataMember(Name = "file_count")]
+        public int FileCount { get; set; }
+    }
+
+    /// <summary>资料库信息（API 令牌模式）。</summary>
+    public class CloudRepoInfo
+    {
+        public string RepoId;
+        public string Name;
+        public long Size;
+        public int FileCount;
+    }
+
     /// <summary>
     /// 云盘（Seafile 分享链接）访问：列目录、读取文件头、下载、读取歌词。
     /// 服务端要求带 User-Agent，否则返回 403。
@@ -90,6 +145,44 @@ namespace LightMusic
             return parts[parts.Length - 1];
         }
 
+        /// <summary>
+        /// 判断填入的是「资料库 API 令牌」还是分享链接。
+        /// API 令牌形如 40 位十六进制（资料的 API 令牌），用它可以直接读写资料库。
+        /// </summary>
+        public static bool IsApiToken(string urlOrToken)
+        {
+            if (string.IsNullOrEmpty(urlOrToken)) return false;
+            string text = urlOrToken.Trim();
+            if (text.IndexOf('/') >= 0 || text.Length != 40) return false;
+            foreach (char c in text)
+            {
+                bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+                if (!hex) return false;
+            }
+            return true;
+        }
+
+        /// <summary>资料库信息（仅 API 令牌模式）。</summary>
+        public static CloudRepoInfo GetRepoInfo(string urlOrToken)
+        {
+            string json = TokenGet(urlOrToken, "/api/v2.1/via-repo-token/repo-info/");
+            TokenRepoInfoDto dto;
+            using (MemoryStream ms = new MemoryStream(Encoding.UTF8.GetBytes(json)))
+            {
+                DataContractJsonSerializer ser = new DataContractJsonSerializer(typeof(TokenRepoInfoDto));
+                dto = (TokenRepoInfoDto)ser.ReadObject(ms);
+            }
+            CloudRepoInfo info = new CloudRepoInfo();
+            if (dto != null)
+            {
+                info.RepoId = dto.RepoId;
+                info.Name = dto.RepoName;
+                info.Size = dto.Size;
+                info.FileCount = dto.FileCount;
+            }
+            return info;
+        }
+
         /// <summary>取分享链接所在的主机（默认清华云盘）。</summary>
         public static string ParseHost(string urlOrToken)
         {
@@ -125,6 +218,8 @@ namespace LightMusic
         /// <summary>列出某个目录下的条目。</summary>
         public static List<CloudEntry> List(string urlOrToken, string path)
         {
+            if (IsApiToken(urlOrToken)) return ListByToken(urlOrToken, path, false);
+
             string token = ParseToken(urlOrToken);
             string host = ParseHost(urlOrToken);
             if (token.Length == 0) throw new InvalidOperationException("分享链接无效");
@@ -165,6 +260,9 @@ namespace LightMusic
         /// <summary>递归列出所有文件（最多 5 层深）。</summary>
         public static List<CloudEntry> ListAllFiles(string urlOrToken, int maxDepth)
         {
+            // API 令牌模式下服务端支持一次递归列出
+            if (IsApiToken(urlOrToken)) return ListByToken(urlOrToken, string.Empty, true);
+
             List<CloudEntry> files = new List<CloudEntry>();
             List<string> dirs = new List<string>();
             dirs.Add(string.Empty);
@@ -200,11 +298,17 @@ namespace LightMusic
             string encoded = filePath.StartsWith("/") ? filePath.Substring(1) : filePath;
             return host + "/d/" + token + "/files/?p=%2F" + EscapePath(encoded) + "&dl=1";
         }
+        /// <summary>按连接方式（分享链接 / API 令牌）解析出可直接下载的 URL。</summary>
+        public static string ResolveFileUrl(string urlOrToken, string filePath)
+        {
+            if (IsApiToken(urlOrToken)) return GetDownloadUrlByToken(urlOrToken, filePath);
+            return BuildFileUrl(urlOrToken, filePath);
+        }
 
         /// <summary>只取文件前若干字节（利用 Range），用于解析时长等信息。</summary>
         public static byte[] DownloadHead(string urlOrToken, string filePath, int bytes)
         {
-            HttpWebRequest request = CreateRequest(BuildFileUrl(urlOrToken, filePath));
+            HttpWebRequest request = CreateRequest(ResolveFileUrl(urlOrToken, filePath));
             request.AddRange(0, bytes - 1);
             using (WebResponse response = request.GetResponse())
             {
@@ -233,7 +337,7 @@ namespace LightMusic
 
         public static byte[] DownloadAll(string urlOrToken, string filePath)
         {
-            HttpWebRequest request = CreateRequest(BuildFileUrl(urlOrToken, filePath));
+            HttpWebRequest request = CreateRequest(ResolveFileUrl(urlOrToken, filePath));
             using (WebResponse response = request.GetResponse())
             {
                 using (Stream stream = response.GetResponseStream())
@@ -254,7 +358,7 @@ namespace LightMusic
         public static void DownloadTo(string urlOrToken, string filePath, string targetPath,
             Action<long, long> progress)
         {
-            HttpWebRequest request = CreateRequest(BuildFileUrl(urlOrToken, filePath));
+            HttpWebRequest request = CreateRequest(ResolveFileUrl(urlOrToken, filePath));
             request.Timeout = 30000;
             string temp = targetPath + ".part";
             string dir = Path.GetDirectoryName(targetPath);
@@ -287,6 +391,8 @@ namespace LightMusic
         /// <summary>取得某个目录的上传地址（分享链接需要开启上传权限）。</summary>
         public static string GetUploadUrl(string urlOrToken, string dirPath)
         {
+            if (IsApiToken(urlOrToken)) return GetUploadUrlByToken(urlOrToken, dirPath);
+
             string token = ParseToken(urlOrToken);
             string host = ParseHost(urlOrToken);
             string path = string.IsNullOrEmpty(dirPath) ? "/" : dirPath;
@@ -451,6 +557,148 @@ namespace LightMusic
             request.KeepAlive = true;
             return request;
         }
+
+        #region 资料库 API 令牌模式
+
+        private static string TokenGet(string token, string apiPath)
+        {
+            string url = ParseHost(token) + apiPath;
+            HttpWebRequest request = CreateRequest(url);
+            request.Headers.Add("Authorization", "Token " + token.Trim());
+            using (WebResponse response = request.GetResponse())
+            {
+                using (Stream stream = response.GetResponseStream())
+                {
+                    using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                    {
+                        return reader.ReadToEnd();
+                    }
+                }
+            }
+        }
+
+        /// <summary>用 API 令牌列目录（recursive=true 时一次列出所有层级）。</summary>
+        public static List<CloudEntry> ListByToken(string token, string path, bool recursive)
+        {
+            string dir = string.IsNullOrEmpty(path) ? "/" : path;
+            string url = ParseHost(token) + "/api/v2.1/via-repo-token/dir/?path="
+                       + Uri.EscapeDataString(dir) + (recursive ? "&recursive=1" : "&recursive=0");
+            HttpWebRequest request = CreateRequest(url);
+            request.Headers.Add("Authorization", "Token " + token.Trim());
+
+            string json;
+            using (WebResponse response = request.GetResponse())
+            {
+                using (Stream stream = response.GetResponseStream())
+                {
+                    using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                    {
+                        json = reader.ReadToEnd();
+                    }
+                }
+            }
+
+            TokenDirDto dto;
+            using (MemoryStream ms = new MemoryStream(Encoding.UTF8.GetBytes(json)))
+            {
+                DataContractJsonSerializer ser = new DataContractJsonSerializer(typeof(TokenDirDto));
+                dto = (TokenDirDto)ser.ReadObject(ms);
+            }
+
+            List<CloudEntry> list = new List<CloudEntry>();
+            if (dto == null || dto.Items == null) return list;
+            foreach (TokenDirentDto item in dto.Items)
+            {
+                if (item == null || string.IsNullOrEmpty(item.Name)) continue;
+                CloudEntry entry = new CloudEntry();
+                entry.Name = item.Name;
+                entry.IsDirectory = string.Equals(item.Type, "dir", StringComparison.OrdinalIgnoreCase);
+                entry.Size = item.Size;
+                string parent = string.IsNullOrEmpty(item.ParentDir) ? "/" : item.ParentDir;
+                if (!parent.EndsWith("/")) parent += "/";
+                entry.Path = parent + item.Name;
+                DateTime modified;
+                if (!string.IsNullOrEmpty(item.Modified) &&
+                    DateTime.TryParse(item.Modified, CultureInfo.InvariantCulture,
+                        DateTimeStyles.AdjustToUniversal, out modified))
+                    entry.Modified = modified;
+                else
+                    entry.Modified = DateTime.UtcNow;
+                list.Add(entry);
+            }
+            return list;
+        }
+
+        /// <summary>用 API 令牌取文件下载地址。</summary>
+        public static string GetDownloadUrlByToken(string token, string filePath)
+        {
+            string json = TokenGet(token, "/api/v2.1/via-repo-token/download-link/?path="
+                + Uri.EscapeDataString(filePath));
+            return Unquote(json);
+        }
+
+        /// <summary>用 API 令牌取上传地址。</summary>
+        public static string GetUploadUrlByToken(string token, string dirPath)
+        {
+            string dir = string.IsNullOrEmpty(dirPath) ? "/" : dirPath;
+            string json = TokenGet(token, "/api/v2.1/via-repo-token/upload-link/?path="
+                + Uri.EscapeDataString(dir));
+            return Unquote(json);
+        }
+
+        /// <summary>用 API 令牌删除文件（需要令牌有读写权限）。</summary>
+        public static void DeleteFiles(string token, string parentDir, List<string> names)
+        {
+            if (names == null || names.Count == 0) return;
+            string url = ParseHost(token) + "/api/v2.1/via-repo-token/batch-delete-item/";
+            HttpWebRequest request = CreateRequest(url);
+            request.Method = "DELETE";
+            request.ContentType = "application/json";
+            request.Headers.Add("Authorization", "Token " + token.Trim());
+
+            StringBuilder body = new StringBuilder();
+            body.Append("{\"parent_dir\":\"").Append(JsonEscape(parentDir)).Append("\",\"dirents\":[");
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (i > 0) body.Append(',');
+                body.Append('"').Append(JsonEscape(names[i])).Append('"');
+            }
+            body.Append("]}");
+
+            byte[] data = Encoding.UTF8.GetBytes(body.ToString());
+            request.ContentLength = data.Length;
+            using (Stream stream = request.GetRequestStream())
+            {
+                stream.Write(data, 0, data.Length);
+            }
+            using (WebResponse response = request.GetResponse())
+            {
+                using (Stream stream = response.GetResponseStream())
+                {
+                    using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                    {
+                        reader.ReadToEnd();
+                    }
+                }
+            }
+        }
+
+        private static string JsonEscape(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            return text.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
+        private static string Unquote(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return json;
+            string text = json.Trim();
+            if (text.Length >= 2 && text[0] == '"' && text[text.Length - 1] == '"')
+                text = text.Substring(1, text.Length - 2);
+            return text.Replace("\\/", "/");
+        }
+
+        #endregion
 
         private static string GetString(string url)
         {

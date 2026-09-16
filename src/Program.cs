@@ -71,6 +71,13 @@ namespace LightMusic
                     args.Length > 2 ? args[2] : null));
                 return;
             }
+            if (args.Length > 0 && args[0] == "--clouddelete")
+            {
+                AttachConsole();
+                Environment.Exit(CloudDelete(args.Length > 1 ? args[1] : null,
+                    args.Length > 2 ? args[2] : null));
+                return;
+            }
 
             bool createdNew;
             Mutex mutex = new Mutex(true, "LightMusicPlayer_SingleInstance", out createdNew);
@@ -324,6 +331,57 @@ namespace LightMusic
 
         /// <summary>真实启动一次界面（显示窗口若干秒后自动退出），用于冒烟测试。</summary>
         /// <summary>上传自检：把本地文件传到云盘分享目录，并列出结果确认。</summary>
+        /// <summary>用 API 令牌删除云盘上的文件（同时验证删除接口）。</summary>
+        private static int CloudDelete(string endpoint, string cloudPath)
+        {
+            StringBuilder report = new StringBuilder();
+            if (string.IsNullOrEmpty(endpoint) || string.IsNullOrEmpty(cloudPath))
+            {
+                Console.WriteLine("usage: LightMusic.exe --clouddelete <token> <path-in-library>");
+                return 1;
+            }
+            try
+            {
+                report.AppendLine("is api token = " + CloudClient.IsApiToken(endpoint));
+                CloudRepoInfo info = CloudClient.GetRepoInfo(endpoint);
+                report.AppendLine("repo = " + info.Name + " files=" + info.FileCount);
+
+                string parent = "/";
+                int slash = cloudPath.LastIndexOf('/');
+                if (slash > 0) parent = cloudPath.Substring(0, slash);
+                string name = cloudPath.Substring(slash + 1);
+                List<string> names = new List<string>();
+                names.Add(name);
+                CloudClient.DeleteFiles(endpoint, parent, names);
+                report.AppendLine("deleted: " + cloudPath);
+
+                List<CloudEntry> entries = CloudClient.List(endpoint, string.Empty);
+                bool stillThere = false;
+                foreach (CloudEntry entry in entries)
+                {
+                    if (entry.Name == name) stillThere = true;
+                }
+                report.AppendLine("还在列表里 = " + stillThere + "（共 " + entries.Count + " 个文件）");
+                report.AppendLine(stillThere ? "DELETETEST FAILED" : "DELETETEST OK");
+                Console.WriteLine(report.ToString());
+                try
+                {
+                    System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                        "lightmusic-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
+                }
+                catch (Exception)
+                {
+                }
+                return stillThere ? 1 : 0;
+            }
+            catch (Exception ex)
+            {
+                LogCrash(ex);
+                Console.WriteLine("delete failed: " + ex.Message);
+                return 1;
+            }
+        }
+
         private static int UploadTest(string url, string localFile)
         {
             StringBuilder report = new StringBuilder();

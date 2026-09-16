@@ -26,6 +26,8 @@ namespace LightMusic
         private readonly CheckBox closeTrayCheck = new CheckBox();
         private readonly CheckBox minimizeTrayCheck = new CheckBox();
         private readonly TextBox cloudUrlBox = new TextBox();
+        private readonly TextBox cloudTokenBox = new TextBox();
+        private readonly TextBlock tokenStatus = Ui.Text("", 12.5, "TextDim");
         private readonly TextBlock cloudStatus = Ui.Text("", 11.5, "TextMuted");
         private readonly TextBlock cacheInfo = Ui.Text("", 11.5, "TextMuted");
         private readonly CheckBox cloudCacheCheck = new CheckBox();
@@ -202,6 +204,55 @@ namespace LightMusic
             Button refresh = Ui.Button("刷新列表", "OutlineButton", delegate { main.Rescan(); });
             Button upload = Ui.Button("上传歌曲", "PrimaryButton", delegate { main.PickAndUploadFiles(); });
 
+            cloudTokenBox.Style = (Style)Application.Current.Resources["InputBox"];
+            cloudTokenBox.FontSize = 12.5;
+            cloudTokenBox.Visibility = Visibility.Collapsed;
+            cloudTokenBox.KeyDown += delegate(object sender, System.Windows.Input.KeyEventArgs e)
+            {
+                if (e.Key == System.Windows.Input.Key.Enter) CommitToken();
+            };
+            cloudTokenBox.LostFocus += delegate { CommitToken(); };
+
+            tokenStatus.VerticalAlignment = VerticalAlignment.Center;
+            tokenStatus.TextTrimming = TextTrimming.CharacterEllipsis;
+
+            Button tokenEdit = Ui.Button("填入令牌", "OutlineButton", delegate
+            {
+                cloudTokenBox.Text = string.Empty;
+                cloudTokenBox.Visibility = Visibility.Visible;
+                tokenStatus.Visibility = Visibility.Collapsed;
+                cloudTokenBox.Focus();
+            });
+            Button tokenClear = Ui.Button("清除", "OutlineButton", delegate
+            {
+                cloudTokenBox.Text = string.Empty;
+                main.SetCloudToken(string.Empty);
+                Refresh();
+                main.Rescan();
+            });
+            Button tokenTest = Ui.Button("检测令牌", "OutlineButton", delegate
+            {
+                cloudStatus.Text = "正在检测令牌…";
+                string token = cloudTokenBox.Visibility == Visibility.Visible
+                    ? cloudTokenBox.Text.Trim() : main.Settings.CloudToken;
+                main.TestCloudToken(token, delegate(bool ok, string message)
+                {
+                    cloudStatus.Text = message;
+                });
+            });
+            Grid tokenRow = new Grid();
+            tokenRow.ColumnDefinitions.Add(new ColumnDefinition());
+            tokenRow.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            tokenRow.ColumnDefinitions.Add(new ColumnDefinition());
+            tokenRow.ColumnDefinitions[1].Width = GridLength.Auto;
+            tokenRow.Children.Add(tokenStatus);
+            tokenRow.Children.Add(cloudTokenBox);
+            StackPanel tokenButtons = Ui.Row(8, tokenEdit, tokenTest, tokenClear);
+            tokenButtons.Margin = new Thickness(10, 0, 0, 0);
+            tokenButtons.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(tokenButtons, 1);
+            tokenRow.Children.Add(tokenButtons);
+
             Grid urlRow = new Grid();
             urlRow.ColumnDefinitions.Add(new ColumnDefinition());
             urlRow.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
@@ -253,12 +304,22 @@ namespace LightMusic
             });
             StackPanel hiddenRow = Ui.Row(12, hiddenText, restore);
 
-            return Card("云端音乐（清华云盘 / Seafile 分享链接）",
+            TextBlock tokenHint = Ui.Text(
+                "也可以填「资料库 API 令牌」（网页版：打开资料库 → 设置 → API 令牌，权限选读写）。"
+                + "填了令牌就优先用令牌：可以直接从播放器里删除云端文件、上传覆盖，不再依赖分享链接。"
+                + "令牌等同于密码，只保存在本机设置里，请不要发给别人。",
+                11.5, "TextMuted");
+            tokenHint.TextWrapping = TextWrapping.Wrap;
+            tokenHint.LineHeight = 20;
+
+            return Card("云端音乐（清华云盘 / Seafile）",
                 Row("分享链接", "", urlRow),
+                Row("API 令牌", "可选，填了就用令牌（可删除云端文件）", tokenRow),
                 cloudStatus,
                 cacheRow,
                 hiddenRow,
-                hint);
+                hint,
+                tokenHint);
         }
 
         private static string CacheText()
@@ -267,6 +328,36 @@ namespace LightMusic
             double mb = bytes / 1024.0 / 1024.0;
             return "缓存占用：" + (mb >= 1024 ? (mb / 1024).ToString("0.0") + " GB" : mb.ToString("0.0") + " MB")
                  + "（" + CloudCache.Count() + " 个文件）";
+        }
+
+        /// <summary>提交令牌输入（回车或失焦时），并恢复掩码显示。</summary>
+        private void CommitToken()
+        {
+            if (cloudTokenBox.Visibility != Visibility.Visible) return;
+            string token = cloudTokenBox.Text.Trim();
+            if (token.Length > 0)
+            {
+                main.SetCloudToken(token);
+                main.Rescan();
+            }
+            cloudTokenBox.Text = string.Empty;
+            cloudTokenBox.Visibility = Visibility.Collapsed;
+            tokenStatus.Visibility = Visibility.Visible;
+            UpdateTokenStatus();
+        }
+
+        private void UpdateTokenStatus()
+        {
+            string token = main.Settings.CloudToken;
+            if (string.IsNullOrEmpty(token))
+            {
+                tokenStatus.Text = "未设置（只用分享链接）";
+                return;
+            }
+            string masked = token.Length > 12
+                ? token.Substring(0, 8) + "…" + token.Substring(token.Length - 4)
+                : token;
+            tokenStatus.Text = "已设置：" + masked + "（可删除云端文件）";
         }
 
         private UIElement BuildPlayCard()
@@ -537,6 +628,7 @@ namespace LightMusic
             minimizeTrayCheck.IsChecked = s.MinimizeToTray;
             if (cloudUrlBox.Text != (s.CloudUrl == null ? string.Empty : s.CloudUrl))
                 cloudUrlBox.Text = s.CloudUrl == null ? string.Empty : s.CloudUrl;
+            if (cloudTokenBox.Visibility != Visibility.Visible) UpdateTokenStatus();
             cloudCacheCheck.IsChecked = s.CloudCacheEnabled;
             cacheInfo.Text = CacheText();
             fontSizeSlider.Value = s.LyricFontSize;

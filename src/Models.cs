@@ -323,6 +323,10 @@ namespace LightMusic
         [DataMember(Name = "cloudUrl", Order = 36)]
         public string CloudUrl { get; set; }
 
+        /// <summary>资料库 API 令牌（可选；填了就优先使用，支持删除云端文件）。</summary>
+        [DataMember(Name = "cloudToken", Order = 38)]
+        public string CloudToken { get; set; }
+
         /// <summary>云端歌曲播放时是否保留本地缓存（缓存后可离线重听）。</summary>
         [DataMember(Name = "cloudCache", Order = 37)]
         public bool CloudCacheEnabled { get; set; }
@@ -352,6 +356,7 @@ namespace LightMusic
             LastView = "library";
             Source = "cloud";
             CloudUrl = string.Empty;
+            CloudToken = string.Empty;
             CloudCacheEnabled = true;
             CloseToTray = false;
             ResumeLast = true;
