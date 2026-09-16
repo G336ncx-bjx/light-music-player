@@ -14,6 +14,27 @@ namespace LightMusic
         /// <summary>无界面模式下运行（不创建托盘图标）。</summary>
         public static bool Headless;
 
+        /// <summary>冒烟测试：播放列表里的第一首，返回描述。</summary>
+        public string SmokePlayFirst()
+        {
+            if (visible.Count == 0) return "列表为空";
+            Song song = visible[0];
+            PlaySong(song);
+            return "开始播放：" + song.Title + (song.IsCloud ? "（云盘）" : "（本地）");
+        }
+
+        /// <summary>冒烟测试：当前播放状态描述。</summary>
+        public string SmokeState()
+        {
+            return "song=" + (currentSong == null ? "-" : currentSong.Title)
+                + " playing=" + engine.IsPlaying
+                + " pos=" + engine.GetPosition().ToString("0.0") + "s"
+                + " duration=" + engine.Duration.ToString("0.0") + "s"
+                + " queue=" + queue.Count
+                + " cached=" + CloudCache.Count()
+                + " lyrics=" + (lyricsView.Lines.Count > 0 ? lyricsView.Lines.Count.ToString() : "-");
+        }
+
         public void LoadDemoForShot(string view, string lyricPath)
         {
             string[] titles = new string[]
@@ -43,6 +64,8 @@ namespace LightMusic
                 song.Path = Path.Combine(settings.MusicDir == null ? "D:\\music" : settings.MusicDir, song.FileName);
                 song.Duration = durations[i];
                 song.Size = 9000000;
+                song.IsCloud = true;
+                song.CloudPath = "/" + song.FileName;
                 if (lyricPath != null) song.LyricPath = lyricPath;
                 library.Add(song);
             }
@@ -61,8 +84,10 @@ namespace LightMusic
 
             double total = 0;
             foreach (Song song in library) total += song.Duration;
-            statusText.Text = "共 " + library.Count + " 首 · 时长 " + Math.Round(total / 60) + " 分";
-            dirLabel.Text = settings.MusicDir;
+            statusText.Text = "云盘 · " + library.Count + " 首 · 已缓存 6 首 · " + Math.Round(total / 60) + " 分";
+            dirLabel.Text = "云盘：" + (string.IsNullOrEmpty(settings.CloudUrl)
+                ? "https://cloud.tsinghua.edu.cn/d/xxxxxxxxxxxx/"
+                : settings.CloudUrl);
 
             titleText.Text = currentSong.Title;
             artistText.Text = currentSong.ArtistText + " · 有歌词";

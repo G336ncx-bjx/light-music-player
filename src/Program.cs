@@ -42,13 +42,25 @@ namespace LightMusic
             if (args.Length > 0 && args[0] == "--smoke")
             {
                 AttachConsole();
-                Environment.Exit(SmokeRun());
+                Environment.Exit(SmokeRun(args));
                 return;
             }
             if (args.Length > 0 && args[0] == "--lockcheck")
             {
                 AttachConsole();
                 Environment.Exit(LockCheck());
+                return;
+            }
+            if (args.Length > 0 && args[0] == "--streamtest")
+            {
+                AttachConsole();
+                Environment.Exit(StreamTest(args.Length > 1 ? args[1] : null));
+                return;
+            }
+            if (args.Length > 0 && args[0] == "--cloudtest")
+            {
+                AttachConsole();
+                Environment.Exit(CloudTest(args.Length > 1 ? args[1] : null));
                 return;
             }
 
@@ -62,6 +74,10 @@ namespace LightMusic
 
             Application app = new Application();
             app.ShutdownMode = ShutdownMode.OnMainWindowClose;
+            app.DispatcherUnhandledException += delegate(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+            {
+                LogCrash(e.Exception);
+            };
             Theme.EnsureStyles();
 
             MainWindow window = new MainWindow();
@@ -224,28 +240,203 @@ namespace LightMusic
         }
 
         /// <summary>真实启动一次界面（显示窗口若干秒后自动退出），用于冒烟测试。</summary>
-        private static int SmokeRun()
+        private static int StreamTest(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                Console.WriteLine("usage: LightMusic.exe --streamtest <url>");
+                return 1;
+            }
+
+            StringBuilder report = new StringBuilder();
+            try
+            {
+                Application app = new Application();
+                app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+                System.Windows.Media.MediaPlayer player = new System.Windows.Media.MediaPlayer();
+                bool opened = false;
+                bool failed = false;
+                string error = null;
+                player.MediaOpened += delegate { opened = true; };
+                player.MediaFailed += delegate(object sender, System.Windows.Media.ExceptionEventArgs e)
+                {
+                    failed = true;
+                    error = e != null && e.ErrorException != null ? e.ErrorException.Message : "unknown";
+                };
+                player.Volume = 0;
+                player.Open(new Uri(url));
+                Pump(6);
+
+                double duration = player.NaturalDuration.HasTimeSpan
+                    ? player.NaturalDuration.TimeSpan.TotalSeconds : 0;
+                Report(report, "stream opened=" + opened + " failed=" + failed + " duration=" + duration.ToString("0.0") + "s"
+                    + (error == null ? "" : " error=" + error));
+
+                if (opened)
+                {
+                    player.Play();
+                    Pump(3);
+                    Report(report, "position after 3s = " + player.Position.TotalSeconds.ToString("0.00") + "s");
+                    try
+                    {
+                        player.Position = TimeSpan.FromSeconds(60);
+                        Pump(2);
+                        Report(report, "seek to 60s -> " + player.Position.TotalSeconds.ToString("0.00") + "s");
+                    }
+                    catch (Exception ex)
+                    {
+                        Report(report, "seek failed: " + ex.Message);
+                    }
+                }
+                player.Close();
+                return opened ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                LogCrash(ex);
+                Report(report, "streamtest failed: " + ex.Message);
+                return 1;
+            }
+        }
+
+        /// <summary>真实启动一次界面（显示窗口若干秒后自动退出），用于冒烟测试。</summary>
+        private static int CloudTest(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                Console.WriteLine("usage: LightMusic.exe --cloudtest <share-url>");
+                return 1;
+            }
+
+            StringBuilder report = new StringBuilder();
+            int failures = 0;
+            try
+            {
+                Report(report, "token = " + CloudClient.ParseToken(url));
+                Report(report, "share = " + CloudClient.ShareUrl(url));
+
+                ScanResult scan = CloudLibrary.Scan(url, null, null);
+                Report(report, "songs = " + scan.Songs.Count);
+                if (scan.Songs.Count == 0)
+                {
+                    Report(report, "CLOUDTEST FAILED: 没有扫描到歌曲");
+                    return 1;
+                }
+
+                int withLyrics = 0;
+                foreach (Song song in scan.Songs)
+                {
+                    if (song.HasLyrics) withLyrics++;
+                }
+                Report(report, "with lyrics = " + withLyrics + "/" + scan.Songs.Count);
+
+                Song first = scan.Songs[0];
+                Report(report, "first = " + first.Title + " - " + first.Artist + " (" + first.FileName + ", "
+                    + (first.Size / 1024 / 1024.0).ToString("0.0") + " MB)");
+
+                byte[] head = CloudClient.DownloadHead(url, first.CloudPath, 512 * 1024);
+                double duration = DurationReader.ReadBytes(head, first.Size,
+                    System.IO.Path.GetExtension(first.FileName));
+                Report(report, "head bytes = " + head.Length + ", duration = " + duration.ToString("0.0") + "s");
+                if (duration < 10 || duration > 3600) failures++;
+
+                string target = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lightmusic-cloud-test.mp3");
+                long lastDone = 0;
+                CloudClient.DownloadTo(url, first.CloudPath, target, delegate(long done, long total)
+                {
+                    lastDone = done;
+                });
+                long length = new System.IO.FileInfo(target).Length;
+                Report(report, "downloaded = " + (length / 1024 / 1024.0).ToString("0.0") + " MB, size match = "
+                    + (length == first.Size) + " (progress last = " + lastDone + ")");
+                if (length != first.Size) failures++;
+
+                double localDuration = DurationReader.Read(target);
+                Report(report, "local parse = " + localDuration.ToString("0.0") + "s, diff = "
+                    + Math.Abs(localDuration - duration).ToString("0.0") + "s");
+                if (Math.Abs(localDuration - duration) > 1.5) failures++;
+                System.IO.File.Delete(target);
+
+                Song lyricSong = null;
+                foreach (Song song in scan.Songs)
+                {
+                    if (song.HasLyrics) { lyricSong = song; break; }
+                }
+                if (lyricSong != null)
+                {
+                    string lrcPath = lyricSong.LyricPath.Substring(
+                        (CloudLibrary.PseudoScheme + CloudClient.ParseToken(url)).Length);
+                    string text = CloudClient.GetText(url, lrcPath);
+                    LyricDocument doc = LrcParser.Parse(text);
+                    Report(report, "lyric lines = " + doc.Lines.Count + ", synced = " + doc.Synced
+                        + ", first = " + (doc.Lines.Count > 0 ? doc.Lines[0].Text : ""));
+                    if (doc.Lines.Count == 0) failures++;
+                }
+
+                Report(report, failures == 0 ? "CLOUDTEST OK" : "CLOUDTEST FAILED: " + failures);
+                return failures == 0 ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                LogCrash(ex);
+                Report(report, "cloudtest failed: " + ex.Message);
+                return 1;
+            }
+        }
+
+        /// <summary>真实启动一次界面（显示窗口若干秒后自动退出），用于冒烟测试。</summary>
+        private static int SmokeRun(string[] args)
         {
             try
             {
+                StringBuilder trace = new StringBuilder();
+                Trace(trace, "start");
+                bool play = args.Length > 1 && args[1] == "play";
                 MainWindow.Headless = true;
                 Application app = new Application();
                 app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                app.DispatcherUnhandledException += delegate(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+                {
+                    LogCrash(e.Exception);
+                    Trace(trace, "dispatcher exception: " + e.Exception.Message);
+                };
                 Theme.EnsureStyles();
+                Trace(trace, "styles");
                 MainWindow window = new MainWindow();
+                // 冒烟测试里强制关闭“关闭到托盘”，否则窗口关闭后进程会留在托盘
+                window.Settings.CloseToTray = false;
+                window.Settings.MinimizeToTray = false;
                 app.MainWindow = window;
                 window.Show();
+                Trace(trace, "shown");
 
-                int seconds = 5;
+                if (play)
+                {
+                    System.Windows.Threading.DispatcherTimer starter = new System.Windows.Threading.DispatcherTimer();
+                    starter.Interval = TimeSpan.FromSeconds(4);
+                    starter.Tick += delegate
+                    {
+                        starter.Stop();
+                        Trace(trace, "play -> " + window.SmokePlayFirst());
+                    };
+                    starter.Start();
+                }
+
+                int seconds = play ? 26 : 5;
                 System.Windows.Threading.DispatcherTimer timer = new System.Windows.Threading.DispatcherTimer();
                 timer.Interval = TimeSpan.FromSeconds(seconds);
                 timer.Tick += delegate
                 {
                     timer.Stop();
+                    Trace(trace, "state -> " + window.SmokeState());
+                    Trace(trace, "tick -> close");
                     window.Close();
                 };
                 timer.Start();
+                Trace(trace, "timer started");
                 app.Run();
+                Trace(trace, "app.Run returned");
                 Console.WriteLine("smoke ok");
                 return 0;
             }
@@ -254,6 +445,24 @@ namespace LightMusic
                 LogCrash(ex);
                 Console.WriteLine("smoke failed: " + ex.Message);
                 return 1;
+            }
+        }
+
+        private static void Trace(StringBuilder trace, string step)
+        {
+            try
+            {
+                trace.AppendLine(DateTime.Now.ToString("HH:mm:ss.fff") + "  " + step);
+                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lightmusic-smoke.log");
+                using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Create,
+                    System.IO.FileAccess.Write, System.IO.FileShare.ReadWrite))
+                using (System.IO.StreamWriter writer = new System.IO.StreamWriter(fs, System.Text.Encoding.UTF8))
+                {
+                    writer.Write(trace.ToString());
+                }
+            }
+            catch (Exception)
+            {
             }
         }
 
