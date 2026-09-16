@@ -21,7 +21,7 @@ namespace LightMusic
     public partial class MainWindow : Window
     {
         public const string AppName = "轻音乐";
-        public const string AppVersion = "1.0.0";
+        public const string AppVersion = "1.1.0";
 
         private readonly AppSettings settings;
         private readonly PlayerEngine engine = new PlayerEngine();

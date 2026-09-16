@@ -10,6 +10,20 @@ namespace LightMusic
     /// <summary>离屏渲染主界面为 PNG，用于开发期的视觉校对。</summary>
     public static class ShotMode
     {
+        private static void Pump(double seconds)
+        {
+            System.Windows.Threading.DispatcherFrame frame = new System.Windows.Threading.DispatcherFrame();
+            System.Windows.Threading.DispatcherTimer timer = new System.Windows.Threading.DispatcherTimer();
+            timer.Interval = TimeSpan.FromSeconds(seconds);
+            timer.Tick += delegate
+            {
+                timer.Stop();
+                frame.Continue = false;
+            };
+            timer.Start();
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+        }
+
         public static int Run(string[] args)
         {
             string output = args.Length > 1 ? args[1] : Path.Combine(Path.GetTempPath(), "lightmusic.png");
@@ -33,6 +47,7 @@ namespace LightMusic
             MainWindow window = new MainWindow();
             Theme.Apply(theme);
             window.LoadDemoForShot(view, lyricPath);
+            Pump(0.25);
 
             FrameworkElement root;
             if (view == "desktop")
@@ -40,6 +55,18 @@ namespace LightMusic
                 DesktopLyricsWindow lyric = new DesktopLyricsWindow(window);
                 lyric.ApplySettings();
                 lyric.UpdateNow();
+                lyric.SimulateHoverForShot();
+                root = lyric.Content as FrameworkElement;
+                width = 980;
+                height = 200;
+            }
+            else if (view == "desktop-locked")
+            {
+                window.Settings.LyricLocked = true;
+                DesktopLyricsWindow lyric = new DesktopLyricsWindow(window);
+                lyric.ApplySettings();
+                lyric.UpdateNow();
+                lyric.SimulateHoverForShot();
                 root = lyric.Content as FrameworkElement;
                 width = 980;
                 height = 200;
@@ -58,10 +85,14 @@ namespace LightMusic
             root.Measure(new Size(width, height));
             root.Arrange(new Rect(0, 0, width, height));
             root.UpdateLayout();
+            Pump(0.25);
+            root.Measure(new Size(width, height));
+            root.Arrange(new Rect(0, 0, width, height));
+            root.UpdateLayout();
 
             RenderTargetBitmap bitmap = new RenderTargetBitmap(
                 (int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
-            if (view == "desktop")
+            if (view == "desktop" || view == "desktop-locked")
             {
                 // 桌面歌词是半透明浮窗，先铺一层桌面背景方便观察效果
                 DrawingVisual background = new DrawingVisual();
