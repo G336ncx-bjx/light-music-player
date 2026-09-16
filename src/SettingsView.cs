@@ -31,6 +31,7 @@ namespace LightMusic
         private readonly TextBlock cloudStatus = Ui.Text("", 11.5, "TextMuted");
         private readonly TextBlock cacheInfo = Ui.Text("", 11.5, "TextMuted");
         private readonly CheckBox cloudCacheCheck = new CheckBox();
+        private readonly TextBlock ffmpegStatus = Ui.Text("", 12, "TextMuted");
         private readonly WrapPanel colorRow = new WrapPanel();
         private readonly Dictionary<string, Border> colorSwatches = new Dictionary<string, Border>();
         private RadioButton darkTheme;
@@ -310,6 +311,22 @@ namespace LightMusic
             });
             StackPanel hiddenRow = Ui.Row(12, hiddenText, restore);
 
+            // 可选：ffmpeg（用于 FLAC / OGG 自动转码）
+            ffmpegStatus.VerticalAlignment = VerticalAlignment.Center;
+            ffmpegStatus.TextTrimming = TextTrimming.CharacterEllipsis;
+            Button pickFfmpeg = Ui.Button("选择 ffmpeg.exe", "OutlineButton", delegate
+            {
+                Forms.OpenFileDialog dialog = new Forms.OpenFileDialog();
+                dialog.Title = "选择 ffmpeg.exe";
+                dialog.Filter = "ffmpeg (ffmpeg.exe)|ffmpeg.exe|所有文件 (*.*)|*.*";
+                if (dialog.ShowDialog() != Forms.DialogResult.OK) return;
+                main.Settings.FfmpegPath = dialog.FileName;
+                main.SaveSettings();
+                Refresh();
+                main.ShowToast("已设置 ffmpeg 路径");
+            });
+            StackPanel ffmpegRow = Ui.Row(12, ffmpegStatus, pickFfmpeg);
+
             TextBlock tokenHint = Ui.Text(
                 "也可以填「资料库 API 令牌」（网页版：打开资料库 → 设置 → API 令牌，权限选读写）。"
                 + "填了令牌就优先用令牌：可以直接从播放器里删除云端文件、上传覆盖，不再依赖分享链接。"
@@ -323,6 +340,7 @@ namespace LightMusic
                 Row("API 令牌", "可选，填了就用令牌（可删除云端文件）", tokenRow),
                 cloudStatus,
                 cacheRow,
+                ffmpegRow,
                 hiddenRow,
                 hint,
                 tokenHint);
@@ -637,6 +655,10 @@ namespace LightMusic
             if (cloudTokenBox.Visibility != Visibility.Visible) UpdateTokenStatus();
             cloudCacheCheck.IsChecked = s.CloudCacheEnabled;
             cacheInfo.Text = CacheText();
+            string ffmpeg = Ffmpeg.Locate(s.FfmpegPath);
+            ffmpegStatus.Text = string.IsNullOrEmpty(ffmpeg)
+                ? "FLAC 已内置解码，无需额外程序；OGG / OPUS 需要 ffmpeg（未找到）"
+                : "FLAC 已内置解码；OGG / OPUS 会用 ffmpeg 自动转码（已找到）";
             fontSizeSlider.Value = s.LyricFontSize;
             fontSizeLabel.Text = ((int)s.LyricFontSize) + " px";
             opacitySlider.Value = s.LyricOpacity * 100;

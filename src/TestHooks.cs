@@ -17,8 +17,26 @@ namespace LightMusic
         /// <summary>冒烟测试：播放列表里的第一首，返回描述。</summary>
         public string SmokePlayFirst()
         {
+            return SmokePlayFirst(null);
+        }
+
+        /// <summary>冒烟测试：播放列表里第一首（可按标题关键字筛选）。</summary>
+        public string SmokePlayFirst(string keyword)
+        {
             if (visible.Count == 0) return "列表为空";
             Song song = visible[0];
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                foreach (Song candidate in visible)
+                {
+                    if (candidate.Title.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0
+                        || candidate.FileName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        song = candidate;
+                        break;
+                    }
+                }
+            }
             PlaySong(song);
             return "开始播放：" + song.Title + (song.IsCloud ? "（云盘）" : "（本地）");
         }

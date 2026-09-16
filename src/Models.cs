@@ -331,6 +331,10 @@ namespace LightMusic
         [DataMember(Name = "cloudCache", Order = 37)]
         public bool CloudCacheEnabled { get; set; }
 
+        /// <summary>可选的 ffmpeg 路径：用于把 FLAC / OGG 等格式自动转成 MP3 播放。</summary>
+        [DataMember(Name = "ffmpegPath", Order = 39)]
+        public string FfmpegPath { get; set; }
+
         public AppSettings()
         {
             MusicDir = string.Empty;
@@ -358,6 +362,7 @@ namespace LightMusic
             CloudUrl = string.Empty;
             CloudToken = string.Empty;
             CloudCacheEnabled = true;
+            FfmpegPath = string.Empty;
             CloseToTray = false;
             ResumeLast = true;
         }

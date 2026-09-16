@@ -21,7 +21,7 @@ namespace LightMusic
     public partial class MainWindow : Window
     {
         public const string AppName = "轻音乐";
-        public const string AppVersion = "1.5.0";
+        public const string AppVersion = "1.6.0";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -43,6 +43,7 @@ namespace LightMusic
         private bool uploading;
         private string cloudRepoName = string.Empty;
         private string cloudRepoId = string.Empty;
+        private string decodedWavInUse;
 
         private DispatcherTimer timer;
         private Forms.NotifyIcon tray;
@@ -1127,6 +1128,7 @@ namespace LightMusic
         {
             ApplyDarkTitleBar();
             UpdateSearchPlaceholder();
+            CloudCache.ClearDecoded();   // 清掉上次留下的 FLAC 解码临时文件
             if (!IsCloudSource)
             {
                 SetMusicDirForFirstRun();
@@ -1577,6 +1579,7 @@ namespace LightMusic
         {
             if (song == null) return;
             ReleaseOldCloudCache();
+            ReleaseDecodedWav(song);
             currentSong = song;
             UpdateCurrentFlags();
             if (lyricsView != null) lyricsView.Load(song);
@@ -1599,6 +1602,39 @@ namespace LightMusic
                 localPath = cached;
             }
 
+            // FLAC / OGG 这类系统内核放不了的格式：用 ffmpeg 转成 MP3（缓存，只转一次）
+            if (Ffmpeg.NeedsTranscode(localPath))
+            {
+                string ext = Path.GetExtension(localPath).ToLowerInvariant();
+                if (ext == ".flac")
+                {
+                    // FLAC 用内置解码器解成 WAV（不需要任何外部程序）
+                    string decoded = CloudCache.DecodedPath(song);
+                    if (File.Exists(decoded))
+                    {
+                        localPath = decoded;
+                    }
+                    else
+                    {
+                        StartFlacDecode(song, localPath, autoPlay, startAt);
+                        return;
+                    }
+                }
+                else
+                {
+                    string transcoded = CloudCache.TranscodedPath(song);
+                    if (File.Exists(transcoded))
+                    {
+                        localPath = transcoded;
+                    }
+                    else
+                    {
+                        StartTranscode(song, localPath, autoPlay, startAt);
+                        return;
+                    }
+                }
+            }
+
             try
             {
                 engine.Open(song, localPath, autoPlay, startAt);
@@ -1608,6 +1644,119 @@ namespace LightMusic
                 ShowToast("无法播放：" + ex.Message);
             }
             PrefetchNext();
+        }
+
+        /// <summary>内置 FLAC 解码：解成临时 WAV 后播放（不需要装任何东西）。</summary>
+        private void StartFlacDecode(Song song, string sourcePath, bool autoPlay, double startAt)
+        {
+            string target = CloudCache.DecodedPath(song);
+            if (artistText != null) artistText.Text = "正在解码 FLAC…";
+            ShowToast("正在解码无损格式（内置解码器，只需一次）");
+            if (bufferingBar != null)
+            {
+                bufferingBar.Visibility = Visibility.Visible;
+                bufferingBar.Value = 0;
+            }
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string error;
+                bool ok = FlacDecoder.Decode(sourcePath, target, delegate(int percent)
+                {
+                    Dispatcher.BeginInvoke((Action)delegate
+                    {
+                        if (currentSong != song) return;
+                        if (bufferingBar != null) bufferingBar.Value = percent;
+                        if (artistText != null) artistText.Text = "正在解码 FLAC… " + percent + "%";
+                    });
+                }, out error);
+
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    if (bufferingBar != null) bufferingBar.Visibility = Visibility.Collapsed;
+                    if (!ok)
+                    {
+                        // 内置解码器搞不定（罕见位深等）：退回 ffmpeg
+                        TraceStep("flac decode failed: " + error);
+                        StartTranscode(song, sourcePath, autoPlay, startAt);
+                        return;
+                    }
+                    if (currentSong != song) return;
+                    try
+                    {
+                        engine.Open(song, target, autoPlay, startAt);
+                        decodedWavInUse = target;
+                    }
+                    catch (Exception ex)
+                    {
+                        ShowToast("无法播放：" + ex.Message);
+                    }
+                    if (artistText != null)
+                        artistText.Text = song.ArtistText + (song.HasLyrics ? " · 有歌词" : "");
+                    PrefetchNext();
+                });
+            });
+        }
+
+        /// <summary>把 OGG / OPUS 等格式用 ffmpeg 转成 MP3 后播放（结果进缓存）。</summary>
+        private void StartTranscode(Song song, string sourcePath, bool autoPlay, double startAt)
+        {
+            string ffmpeg = Ffmpeg.Locate(settings.FfmpegPath);
+            if (string.IsNullOrEmpty(ffmpeg))
+            {
+                ShowToast("这首歌是 " + Path.GetExtension(sourcePath).TrimStart('.').ToUpperInvariant()
+                    + " 格式，系统播放内核不支持；装一个 ffmpeg 即可自动转码播放");
+                if (artistText != null) artistText.Text = song.ArtistText;
+                return;
+            }
+
+            string target = CloudCache.TranscodedPath(song);
+            if (artistText != null) artistText.Text = "正在转换格式…";
+            ShowToast("正在把 " + Path.GetExtension(sourcePath).TrimStart('.').ToUpperInvariant()
+                + " 转成 MP3（只转这一次，之后直接用缓存）");
+            if (bufferingBar != null)
+            {
+                bufferingBar.Visibility = Visibility.Visible;
+                bufferingBar.Value = 0;
+            }
+
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string error;
+                bool ok = Ffmpeg.ToMp3(ffmpeg, sourcePath, target, song.Duration, delegate(int percent)
+                {
+                    if (percent < 0) return;
+                    Dispatcher.BeginInvoke((Action)delegate
+                    {
+                        if (currentSong != song) return;
+                        if (bufferingBar != null) bufferingBar.Value = percent;
+                        if (artistText != null) artistText.Text = "正在转换格式… " + percent + "%";
+                    });
+                }, out error);
+
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    if (bufferingBar != null) bufferingBar.Visibility = Visibility.Collapsed;
+                    if (!ok)
+                    {
+                        ShowToast("转换失败：" + error);
+                        if (artistText != null) artistText.Text = song.ArtistText;
+                        return;
+                    }
+                    if (currentSong != song) return;
+                    try
+                    {
+                        engine.Open(song, target, autoPlay, startAt);
+                    }
+                    catch (Exception ex)
+                    {
+                        ShowToast("无法播放：" + ex.Message);
+                    }
+                    if (artistText != null)
+                        artistText.Text = song.ArtistText + (song.HasLyrics ? " · 有歌词" : "");
+                    PrefetchNext();
+                });
+            });
         }
 
         /// <summary>云盘歌曲：先下载到本地缓存再播放，并显示进度。</summary>
@@ -1694,6 +1843,22 @@ namespace LightMusic
                 {
                 }
             });
+        }
+
+        /// <summary>切歌时删掉上一首 FLAC 解码出来的大 WAV（FLAC 本体仍保留在缓存里）。</summary>
+        private void ReleaseDecodedWav(Song keepFor)
+        {
+            if (string.IsNullOrEmpty(decodedWavInUse)) return;
+            if (keepFor != null && string.Equals(CloudCache.DecodedPath(keepFor),
+                decodedWavInUse, StringComparison.OrdinalIgnoreCase)) return;
+            try
+            {
+                if (File.Exists(decodedWavInUse)) File.Delete(decodedWavInUse);
+            }
+            catch (Exception)
+            {
+            }
+            decodedWavInUse = null;
         }
 
         /// <summary>关闭「保留缓存」时，切歌后删除上一首的缓存文件。</summary>

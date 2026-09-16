@@ -85,6 +85,13 @@ namespace LightMusic
                     args.Length > 2 ? args[2] : null));
                 return;
             }
+            if (args.Length > 0 && args[0] == "--flactest")
+            {
+                AttachConsole();
+                Environment.Exit(FlacTest(args.Length > 1 ? args[1] : null,
+                    args.Length > 2 ? args[2] : null));
+                return;
+            }
 
             bool createdNew;
             Mutex mutex = new Mutex(true, "LightMusicPlayer_SingleInstance", out createdNew);
@@ -312,42 +319,37 @@ namespace LightMusic
                 Application app = new Application();
                 app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-                System.Windows.Media.MediaPlayer player = new System.Windows.Media.MediaPlayer();
+                PlayerEngine engine = new PlayerEngine();
                 bool opened = false;
-                bool failed = false;
                 string error = null;
-                player.MediaOpened += delegate { opened = true; };
-                player.MediaFailed += delegate(object sender, System.Windows.Media.ExceptionEventArgs e)
+                engine.Opened += delegate { opened = true; };
+                engine.Failed += delegate(object sender, EventArgs e)
                 {
-                    failed = true;
-                    error = e != null && e.ErrorException != null ? e.ErrorException.Message : "unknown";
+                    PlayerErrorArgs args = e as PlayerErrorArgs;
+                    error = args == null ? "unknown" : args.Message;
                 };
-                player.Volume = 0;
-                player.Open(new Uri(url));
-                Pump(6);
+                engine.Volume = 0;
 
-                double duration = player.NaturalDuration.HasTimeSpan
-                    ? player.NaturalDuration.TimeSpan.TotalSeconds : 0;
-                Report(report, "stream opened=" + opened + " failed=" + failed + " duration=" + duration.ToString("0.0") + "s"
+                Song song = new Song();
+                song.Path = url;
+                song.Title = System.IO.Path.GetFileName(url);
+                Report(report, "file = " + song.Title);
+                engine.Open(song, true, 0);
+                Pump(7);
+
+                Report(report, "opened=" + opened
+                    + " playing=" + engine.IsPlaying + " duration=" + engine.Duration.ToString("0.0") + "s"
+                    + " pos=" + engine.GetPosition().ToString("0.0") + "s"
                     + (error == null ? "" : " error=" + error));
 
                 if (opened)
                 {
-                    player.Play();
-                    Pump(3);
-                    Report(report, "position after 3s = " + player.Position.TotalSeconds.ToString("0.00") + "s");
-                    try
-                    {
-                        player.Position = TimeSpan.FromSeconds(60);
-                        Pump(2);
-                        Report(report, "seek to 60s -> " + player.Position.TotalSeconds.ToString("0.00") + "s");
-                    }
-                    catch (Exception ex)
-                    {
-                        Report(report, "seek failed: " + ex.Message);
-                    }
+                    engine.Seek(60);
+                    Pump(2.5);
+                    Report(report, "seek to 60s -> " + engine.GetPosition().ToString("0.0") + "s");
                 }
-                player.Close();
+                engine.Close();
+                Report(report, opened ? "STREAMTEST OK" : "STREAMTEST FAILED");
                 return opened ? 0 : 1;
             }
             catch (Exception ex)
@@ -431,6 +433,46 @@ namespace LightMusic
             {
             }
             return failed == 0 ? 0 : 1;
+        }
+
+        /// <summary>用 API 令牌删除云盘上的文件（同时验证删除接口）。</summary>
+        /// <summary>内置 FLAC 解码器自检：把 FLAC 解成 WAV。</summary>
+        private static int FlacTest(string flacPath, string wavPath)
+        {
+            if (string.IsNullOrEmpty(flacPath) || string.IsNullOrEmpty(wavPath))
+            {
+                Console.WriteLine("usage: LightMusic.exe --flactest <in.flac> <out.wav>");
+                return 1;
+            }
+            StringBuilder report = new StringBuilder();
+            try
+            {
+                DateTime started = DateTime.Now;
+                string error;
+                bool ok = FlacDecoder.Decode(flacPath, wavPath, out error);
+                double seconds = (DateTime.Now - started).TotalSeconds;
+                long size = ok && System.IO.File.Exists(wavPath)
+                    ? new System.IO.FileInfo(wavPath).Length : 0;
+                report.AppendLine("decode " + (ok ? "ok" : "failed") + " -> " + wavPath
+                    + " (" + (size / 1024 / 1024) + " MB, " + seconds.ToString("0.0") + "s)"
+                    + (error == null ? "" : " error=" + error));
+                Console.WriteLine(report.ToString());
+                try
+                {
+                    System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                        "lightmusic-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
+                }
+                catch (Exception)
+                {
+                }
+                return ok ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                LogCrash(ex);
+                Console.WriteLine("flactest failed: " + ex.Message);
+                return 1;
+            }
         }
 
         /// <summary>用 API 令牌删除云盘上的文件（同时验证删除接口）。</summary>
@@ -659,7 +701,8 @@ namespace LightMusic
                     starter.Tick += delegate
                     {
                         starter.Stop();
-                        Trace(trace, "play -> " + window.SmokePlayFirst());
+                        string keyword = args.Length > 2 ? args[2] : null;
+                        Trace(trace, "play -> " + window.SmokePlayFirst(keyword));
                     };
                     starter.Start();
                 }

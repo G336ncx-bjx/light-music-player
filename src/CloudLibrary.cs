@@ -178,6 +178,18 @@ namespace LightMusic
             return null;
         }
 
+        /// <summary>转码后的 MP3 缓存路径（FLAC / OGG 等格式转码后放这里）。</summary>
+        public static string TranscodedPath(Song song)
+        {
+            return Path.ChangeExtension(FileFor(song), ".mp3");
+        }
+
+        /// <summary>FLAC 解码出来的 WAV（临时文件，切歌后会删掉）。</summary>
+        public static string DecodedPath(Song song)
+        {
+            return FileFor(song) + ".decoded.wav";
+        }
+
         public static bool Remove(Song song)
         {
             try
@@ -200,6 +212,27 @@ namespace LightMusic
             try
             {
                 foreach (string file in System.IO.Directory.GetFiles(Directory))
+                {
+                    try
+                    {
+                        File.Delete(file);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>删除 FLAC 解码产生的临时 WAV（这些文件很大，用完就清）。</summary>
+        public static void ClearDecoded()
+        {
+            try
+            {
+                foreach (string file in System.IO.Directory.GetFiles(Directory, "*.decoded.wav"))
                 {
                     try
                     {

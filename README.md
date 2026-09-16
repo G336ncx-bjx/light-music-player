@@ -74,6 +74,14 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start
 
 只填其中一个即可：只填令牌（分享链接留空）同样能列目录、播放、上传、删除，界面上也只会显示资料库名称而不会显示令牌明文。
 
+### 支持的格式
+
+| 格式 | 说明 |
+| --- | --- |
+| mp3 / wav / wma / m4a / aac | 直接用 Windows 自带解码播放 |
+| **flac** | **播放器内置解码，不需要安装任何东西**（解码成临时 WAV，切歌后自动清理） |
+| ogg / opus / ape / wv | 检测到系统里有 ffmpeg 时自动转码播放（可选，非必需） |
+
 ## 桌面歌词
 
 ![桌面歌词](docs/screenshots/desktop-lyrics.png)
