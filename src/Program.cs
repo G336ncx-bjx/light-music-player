@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 
-namespace LightMusic
+namespace Skylark
 {
     public static class Program
     {
@@ -94,7 +94,7 @@ namespace LightMusic
             }
 
             bool createdNew;
-            Mutex mutex = new Mutex(true, "LightMusicPlayer_SingleInstance", out createdNew);
+            Mutex mutex = new Mutex(true, "SkylarkPlayer_SingleInstance", out createdNew);
             if (!createdNew)
             {
                 FocusRunningInstance();
@@ -121,7 +121,7 @@ namespace LightMusic
             if (ex == null) return;
             try
             {
-                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "LightMusic-error.log");
+                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Skylark-error.log");
                 System.IO.File.AppendAllText(path,
                     DateTime.Now.ToString("s") + Environment.NewLine + ex + Environment.NewLine + Environment.NewLine,
                     System.Text.Encoding.UTF8);
@@ -272,7 +272,7 @@ namespace LightMusic
             try
             {
                 System.IO.File.WriteAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lightmusic-lockcheck.log"),
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "skylark-lockcheck.log"),
                     report.ToString(), System.Text.Encoding.UTF8);
             }
             catch (Exception)
@@ -309,7 +309,7 @@ namespace LightMusic
         {
             if (string.IsNullOrEmpty(url))
             {
-                Console.WriteLine("usage: LightMusic.exe --streamtest <url>");
+                Console.WriteLine("usage: Skylark.exe --streamtest <url>");
                 return 1;
             }
 
@@ -372,7 +372,7 @@ namespace LightMusic
             StringBuilder report = new StringBuilder();
             if (string.IsNullOrEmpty(endpoint) || string.IsNullOrEmpty(localFolder))
             {
-                Console.WriteLine("usage: LightMusic.exe --uploadall <endpoint> <local-folder>");
+                Console.WriteLine("usage: Skylark.exe --uploadall <endpoint> <local-folder>");
                 return 1;
             }
 
@@ -427,7 +427,7 @@ namespace LightMusic
             try
             {
                 System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
-                    "lightmusic-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
+                    "skylark-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
             }
             catch (Exception)
             {
@@ -441,7 +441,7 @@ namespace LightMusic
         {
             if (string.IsNullOrEmpty(flacPath) || string.IsNullOrEmpty(wavPath))
             {
-                Console.WriteLine("usage: LightMusic.exe --flactest <in.flac> <out.wav>");
+                Console.WriteLine("usage: Skylark.exe --flactest <in.flac> <out.wav>");
                 return 1;
             }
             StringBuilder report = new StringBuilder();
@@ -460,7 +460,7 @@ namespace LightMusic
                 try
                 {
                     System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
-                        "lightmusic-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
+                        "skylark-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
                 }
                 catch (Exception)
                 {
@@ -481,7 +481,7 @@ namespace LightMusic
             StringBuilder report = new StringBuilder();
             if (string.IsNullOrEmpty(endpoint) || string.IsNullOrEmpty(cloudPath))
             {
-                Console.WriteLine("usage: LightMusic.exe --clouddelete <token> <path-in-library>");
+                Console.WriteLine("usage: Skylark.exe --clouddelete <token> <path-in-library>");
                 return 1;
             }
             try
@@ -511,7 +511,7 @@ namespace LightMusic
                 try
                 {
                     System.IO.File.WriteAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(),
-                        "lightmusic-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
+                        "skylark-lockcheck.log"), report.ToString(), System.Text.Encoding.UTF8);
                 }
                 catch (Exception)
                 {
@@ -531,7 +531,7 @@ namespace LightMusic
             StringBuilder report = new StringBuilder();
             if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(localFile))
             {
-                Console.WriteLine("usage: LightMusic.exe --uploadtest <share-url> <local-file>");
+                Console.WriteLine("usage: Skylark.exe --uploadtest <share-url> <local-file>");
                 return 1;
             }
             try
@@ -565,7 +565,7 @@ namespace LightMusic
         {
             if (string.IsNullOrEmpty(url))
             {
-                Console.WriteLine("usage: LightMusic.exe --cloudtest <share-url>");
+                Console.WriteLine("usage: Skylark.exe --cloudtest <share-url>");
                 return 1;
             }
 
@@ -624,7 +624,7 @@ namespace LightMusic
                 Report(report, "head bytes = " + head.Length + ", duration = " + duration.ToString("0.0") + "s");
                 if (duration < 10 || duration > 3600) failures++;
 
-                string target = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lightmusic-cloud-test.mp3");
+                string target = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "skylark-cloud-test.mp3");
                 long lastDone = 0;
                 CloudClient.DownloadTo(url, first.CloudPath, target, delegate(long done, long total)
                 {
@@ -738,7 +738,7 @@ namespace LightMusic
             try
             {
                 trace.AppendLine(DateTime.Now.ToString("HH:mm:ss.fff") + "  " + step);
-                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lightmusic-smoke.log");
+                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "skylark-smoke.log");
                 using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Create,
                     System.IO.FileAccess.Write, System.IO.FileShare.ReadWrite))
                 using (System.IO.StreamWriter writer = new System.IO.StreamWriter(fs, System.Text.Encoding.UTF8))

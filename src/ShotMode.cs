@@ -5,7 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>离屏渲染主界面为 PNG，用于开发期的视觉校对。</summary>
     public static class ShotMode
@@ -26,7 +26,7 @@ namespace LightMusic
 
         public static int Run(string[] args)
         {
-            string output = args.Length > 1 ? args[1] : Path.Combine(Path.GetTempPath(), "lightmusic.png");
+            string output = args.Length > 1 ? args[1] : Path.Combine(Path.GetTempPath(), "skylark.png");
             string view = args.Length > 2 ? args[2] : "library";
             string theme = args.Length > 3 ? args[3] : "dark";
             double width = args.Length > 4 ? double.Parse(args[4]) : 1180;
@@ -37,7 +37,7 @@ namespace LightMusic
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
             Theme.Current = theme;
 
-            string lyricPath = Path.Combine(Path.GetTempPath(), "lightmusic-demo.lrc");
+            string lyricPath = Path.Combine(Path.GetTempPath(), "skylark-demo.lrc");
             System.Text.StringBuilder lrc = new System.Text.StringBuilder();
             lrc.AppendLine("[ti:晴天]");
             lrc.AppendLine("[ar:周杰伦]");

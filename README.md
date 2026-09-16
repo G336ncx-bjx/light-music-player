@@ -1,7 +1,7 @@
-# 轻音乐 (Light Music)
+# 云雀 (Skylark)
 
-[![CI](https://github.com/G336ncx-bjx/light-music-player/actions/workflows/ci.yml/badge.svg)](https://github.com/G336ncx-bjx/light-music-player/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/G336ncx-bjx/light-music-player?label=release)](https://github.com/G336ncx-bjx/light-music-player/releases)
+[![CI](https://github.com/G336ncx-bjx/skylark-music/actions/workflows/ci.yml/badge.svg)](https://github.com/G336ncx-bjx/skylark-music/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/G336ncx-bjx/skylark-music?label=release)](https://github.com/G336ncx-bjx/skylark-music/releases)
 
 一个轻量、顺手的 **云端音乐播放器**：**单个 exe、零依赖**，双击桌面快捷方式就能听歌。
 
@@ -12,12 +12,25 @@
 
 ## 下载
 
-不想自己编译的话，直接到 [Releases](https://github.com/G336ncx-bjx/light-music-player/releases) 下载：
+不想自己编译的话，直接到 [Releases](https://github.com/G336ncx-bjx/skylark-music/releases) 下载：
 
-- `LightMusic.exe`：单文件绿色版，下载后双击即可运行（Windows 10 / 11）。
-- `LightMusic-win-x64.zip`：exe + 使用说明的压缩包。
+- `Skylark.exe`：单文件绿色版，下载后双击即可运行（Windows 10 / 11）。
+- `Skylark-win-x64.zip`：exe + 使用说明的压缩包。
 
 下载后如果想让桌面有个快捷方式，运行 `scripts\install.ps1`（或手动给 exe 发送快捷方式到桌面）即可。
+
+### 第一次运行提示「未知发布者」怎么办？
+
+这是**正常现象**：`Skylark.exe` 没有购买代码签名证书，Windows 对任何未签名的程序都会提示一次，
+不是文件有问题。处理方式：
+
+1. 点提示框里的「**更多信息**」，再点「**仍要运行**」即可；
+2. 想更放心的话，可以对照 Release 里的 `SHA256SUMS.txt` 校验你下载到的 exe（或在 PowerShell 里
+   `Get-FileHash .\Skylark.exe -Algorithm SHA256` 比对）；
+3. 最稳妥的是自己构建：源码是纯 C#，用系统自带编译器，`build.ps1` 一条命令就能编出同样的 exe。
+
+另外，程序只访问你在设置里填写的那个云盘地址，不向任何其它服务器发送数据；
+如果你看到杀毒软件提示联网，那是因为它在读取你的云盘（播放/缓存/上传/删除都走这个地址）。
 
 ## 功能
 
@@ -46,7 +59,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start
 ```
 
-之后点击桌面上的「轻音乐」即可运行。程序是单文件 `dist\LightMusic.exe`（约 200 KB），可以直接复制到任何 Windows 10 / 11 电脑上运行。
+之后点击桌面上的「云雀」即可运行。程序是单文件 `dist\Skylark.exe`（约 200 KB），可以直接复制到任何 Windows 10 / 11 电脑上运行。
 
 ### 音乐与歌词的放置（在云盘里）
 
@@ -160,28 +173,28 @@ src/Resources/templates.xaml 列表行数据模板
 - **快速扫描**：时长不依赖解码器，直接解析文件头（MP3 支持 Xing/VBRI 帧数、FLAC 的 STREAMINFO、WAV、M4A/MP4 的 mvhd），并按时长 + 修改时间做缓存。
 - **歌词解析**：自动识别 UTF-8 / UTF-16 / GBK，支持一行多时间戳、`offset` 偏移与翻译行。
 - **播放进度**：MediaPlayer 的位置更新较粗糙，这里用锚点 + 秒表插值，让进度条与歌词滚动更平滑。
-- **配置位置**：`%APPDATA%\LightMusic\settings.json`（该目录不可写时自动退回 exe 同级 `data` 目录）。
+- **配置位置**：`%APPDATA%\Skylark\settings.json`（该目录不可写时自动退回 exe 同级 `data` 目录）。
 
 ### 开发用命令
 
 ```powershell
 # 无界面自检：歌词解析、文件名解析、时长解析、真实播放、扫描、配置、M3U
-dist\LightMusic.exe --selftest
+dist\Skylark.exe --selftest
 
 # 离屏渲染界面截图，便于检查排版（library / lyrics / queue / settings / desktop）
-dist\LightMusic.exe --shot out.png lyrics dark
+dist\Skylark.exe --shot out.png lyrics dark
 
 # 真实启动界面 5 秒后自动退出（冒烟测试）
-dist\LightMusic.exe --smoke
+dist\Skylark.exe --smoke
 
 # 验证桌面歌词“锁定”是否真的鼠标穿透（用 WindowFromPoint 做命中测试）
-dist\LightMusic.exe --lockcheck
+dist\Skylark.exe --lockcheck
 
 # 把本地文件夹里的歌一次性补齐到云端（缺的上传、同名同大小跳过、大小不同覆盖）
-dist\LightMusic.exe --uploadall <令牌或分享链接> "D:\某个文件夹"
+dist\Skylark.exe --uploadall <令牌或分享链接> "D:\某个文件夹"
 
 # 整库校验：逐首拉文件头解析时长 + 统计歌词覆盖率
-dist\LightMusic.exe --cloudtest <令牌或分享链接>
+dist\Skylark.exe --cloudtest <令牌或分享链接>
 ```
 
 ## 许可证
@@ -193,4 +206,4 @@ dist\LightMusic.exe --cloudtest <令牌或分享链接>
 - 只有**功能级改动**（用户能感知的新能力或修复）才会打 `v*` 标签并发布 Release；
 - 工具类、内部重构、命令行的改动只推送到 `main`（CI 依旧会构建 + 跑自检），版本号保持不变；
 - 主版本号只在出现不兼容变更时提升，尽量保持「一个版本对应一次有意义的交付」。
-- 需要比 Release 更新的构建时：打开 [Actions](https://github.com/G336ncx-bjx/light-music-player/actions/workflows/ci.yml) 里最新一次成功的 CI，下载 `LightMusic-dev` 产物即可（每次推送都会重新构建并跑一遍自检）。
+- 需要比 Release 更新的构建时：打开 [Actions](https://github.com/G336ncx-bjx/skylark-music/actions/workflows/ci.yml) 里最新一次成功的 CI，下载 `Skylark-dev` 产物即可（每次推送都会重新构建并跑一遍自检）。

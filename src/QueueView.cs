@@ -8,7 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Forms = System.Windows.Forms;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>播放队列视图。</summary>
     public class QueueView : UserControl

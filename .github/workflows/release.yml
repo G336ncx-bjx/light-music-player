@@ -23,39 +23,63 @@ jobs:
       - name: Self test
         shell: powershell
         run: |
-          $p = Start-Process -FilePath .\dist\LightMusic.exe -ArgumentList '--selftest' -PassThru -Wait
-          Get-Content "$env:TEMP\lightmusic-selftest.log" -Encoding UTF8
+          $p = Start-Process -FilePath .\dist\Skylark.exe -ArgumentList '--selftest' -PassThru -Wait
+          Get-Content "$env:TEMP\skylark-selftest.log" -Encoding UTF8
           if ($p.ExitCode -ne 0) { throw "selftest failed (exit $($p.ExitCode))" }
 
       - name: Package
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Copy-Item .\dist\LightMusic.exe .\release\LightMusic.exe
+          Copy-Item .\dist\Skylark.exe .\release\Skylark.exe
           Copy-Item .\README.md .\release\README.md
-          Compress-Archive -Path .\release\* -DestinationPath .\LightMusic-win-x64.zip -Force
+          Compress-Archive -Path .\release\* -DestinationPath .\Skylark-win-x64.zip -Force
+
+      - name: Checksum
+        shell: powershell
+        run: |
+          $hash = (Get-FileHash .\dist\Skylark.exe -Algorithm SHA256).Hash.ToLower()
+          "SHA256(Skylark.exe) = $hash" | Out-File -Encoding utf8 .\SHA256SUMS.txt
+          Get-Content .\SHA256SUMS.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: LightMusic-win-x64
+          name: Skylark-win-x64
           path: |
-            dist/LightMusic.exe
-            LightMusic-win-x64.zip
+            dist/Skylark.exe
+            Skylark-win-x64.zip
+            SHA256SUMS.txt
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          name: 轻音乐 ${{ github.ref_name }}
+          name: 云雀 ${{ github.ref_name }}
           body: |
-            轻量级 Windows 本地音乐播放器：**单个 exe、零依赖、双击即用**。
+            **云雀（Skylark）** —— 轻量级云端音乐播放器：**单个 exe、零依赖、不装任何运行库**。
 
-            下载下面的 `LightMusic.exe` 直接运行即可（也可以下载 zip 压缩包，解压后运行）。
-            程序不会联网、不上传数据，音乐与歌词都读取本地文件夹。
+            ### 怎么用
 
-            首次运行会自动寻找 `music` 文件夹（exe 同级 → 逐级向上 → 系统的「音乐」目录），也可以在「设置」里手动指定。
+            1. 下载下面的 `Skylark.exe`（约 300 KB）双击运行（也可下载 zip，解压后运行）；
+            2. 首次打开会自动跳到「设置」，填入**你自己的云盘分享链接**或**资料库 API 令牌**（清华云盘 / Seafile 均可）；
+            3. 回到音乐库，点歌名即播放：支持歌词、桌面歌词（可锁定为鼠标穿透）、播放列表、上传与删除云端文件。
+
+            ### 第一次运行提示「未知发布者」？
+
+            这是正常现象：exe 没有购买代码签名证书，Windows 对未签名程序一律这么提示。点「**更多信息 → 仍要运行**」即可。
+            如果不放心，可以：
+
+            - 对照下面的 `SHA256SUMS.txt` 校验下载到的文件；
+            - 或者直接看源码（纯 C#，用系统自带编译器，`build.ps1` 一键构建）自己编一个。
+
+            ### 关于数据
+
+            程序不会向任何服务器上传你的数据，只访问你在设置里填写的那个云盘地址；
+            听过的歌会缓存在 `%APPDATA%\Skylark\cache`，设置里可以看到占用并一键清理，也可以关掉缓存。
+            无损 FLAC 由播放器内置解码，无需安装任何东西。
           files: |
-            dist/LightMusic.exe
-            LightMusic-win-x64.zip
+            dist/Skylark.exe
+            Skylark-win-x64.zip
+            SHA256SUMS.txt
           generate_release_notes: true

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>
     /// 可选依赖：系统里如果有 ffmpeg，就能把 Windows 播放内核放不了的格式

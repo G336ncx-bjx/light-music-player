@@ -6,7 +6,7 @@ using System.Linq;
 using System.Runtime.Serialization.Json;
 using System.Text;
 
-namespace LightMusic
+namespace Skylark
 {
     public static class AppPaths
     {
@@ -23,7 +23,8 @@ namespace LightMusic
         private static string dataDir;
 
         /// <summary>
-        /// 配置目录：优先 %APPDATA%\LightMusic，若不可写（例如受限环境）则退回到 exe 目录下的 data。
+        /// 配置目录：优先 %APPDATA%\Skylark，若不可写（例如受限环境）则退回到 exe 目录下的 data。
+        /// 第一次以新名字启动时，会把旧版「LightMusic」目录整体搬过来（配置 + 缓存都不丢）。
         /// </summary>
         public static string DataDir
         {
@@ -32,7 +33,8 @@ namespace LightMusic
                 if (dataDir != null) return dataDir;
 
                 string preferred = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LightMusic");
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Skylark");
+                MigrateLegacyFolder(preferred);
                 if (TryPrepare(preferred))
                 {
                     dataDir = preferred;
@@ -48,6 +50,52 @@ namespace LightMusic
 
                 dataDir = ExeDir;
                 return dataDir;
+            }
+        }
+
+        /// <summary>旧版本（叫 LightMusic 时）的数据目录整体搬到新目录，配置与缓存都不丢。</summary>
+        private static void MigrateLegacyFolder(string preferred)
+        {
+            try
+            {
+                string legacy = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "LightMusic");
+                if (Directory.Exists(preferred)) return;
+                if (!Directory.Exists(legacy)) return;
+
+                Directory.CreateDirectory(preferred);
+
+                // 配置一定要带过来（令牌、播放列表、设置都在里面）
+                string oldSettings = Path.Combine(legacy, "settings.json");
+                if (File.Exists(oldSettings))
+                {
+                    File.Copy(oldSettings, Path.Combine(preferred, "settings.json"), true);
+                }
+
+                // 缓存尽量搬过去；搬不动就算了（需要时会重新下载）
+                try
+                {
+                    string oldCache = Path.Combine(legacy, "cache");
+                    string newCache = Path.Combine(preferred, "cache");
+                    if (Directory.Exists(oldCache) && !Directory.Exists(newCache))
+                        Directory.Move(oldCache, newCache);
+                }
+                catch (Exception)
+                {
+                }
+
+                // 旧目录尽力清理，删不掉就留着（不影响使用）
+                try
+                {
+                    Directory.Delete(legacy, true);
+                }
+                catch (Exception)
+                {
+                }
+            }
+            catch (Exception)
+            {
+                // 搬不动就算了，后面会退回到新建目录
             }
         }
 

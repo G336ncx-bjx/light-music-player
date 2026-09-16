@@ -32,8 +32,8 @@ function New-IconBitmap([int]$size) {
     $inner = $s - 2 * $pad
     $path = New-RoundRect $pad $pad $inner $inner ($inner * 0.26)
 
-    $c1 = [System.Drawing.Color]::FromArgb(255, 88, 101, 242)
-    $c2 = [System.Drawing.Color]::FromArgb(255, 168, 85, 247)
+    $c1 = [System.Drawing.Color]::FromArgb(255, 56, 189, 248)
+    $c2 = [System.Drawing.Color]::FromArgb(255, 99, 102, 241)
     $p1 = New-Object System.Drawing.PointF -ArgumentList 0, 0
     $p2 = New-Object System.Drawing.PointF -ArgumentList $s, $s
     $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush -ArgumentList $p1, $p2, $c1, $c2

@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Windows.Media;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>
     /// 基于 WPF MediaPlayer 的播放内核，附带平滑进度估算（用于歌词与进度条）。

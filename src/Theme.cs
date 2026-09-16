@@ -8,7 +8,7 @@ using System.Windows.Media;
 using System.Xml;
 using Microsoft.Win32;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>配色与样式（深色 / 浅色两套）。</summary>
     public static class Theme
@@ -52,11 +52,11 @@ namespace LightMusic
 
             Apply(Mode);
 
-            Stream stream = typeof(Theme).Assembly.GetManifestResourceStream("LightMusic.Theme.xaml");
-            if (stream == null) throw new InvalidOperationException("缺少内嵌样式资源 LightMusic.Theme.xaml");
+            Stream stream = typeof(Theme).Assembly.GetManifestResourceStream("Skylark.Theme.xaml");
+            if (stream == null) throw new InvalidOperationException("缺少内嵌样式资源 Skylark.Theme.xaml");
             LoadResource(stream);
 
-            Stream templates = typeof(Theme).Assembly.GetManifestResourceStream("LightMusic.Templates.xaml");
+            Stream templates = typeof(Theme).Assembly.GetManifestResourceStream("Skylark.Templates.xaml");
             if (templates != null) LoadResource(templates);
         }
 

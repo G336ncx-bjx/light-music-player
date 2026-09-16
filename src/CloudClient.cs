@@ -7,7 +7,7 @@ using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>云盘上的一个条目（文件或目录）。</summary>
     public class CloudEntry
@@ -114,7 +114,7 @@ namespace LightMusic
     {
         public const string DefaultHost = "https://cloud.tsinghua.edu.cn";
         private const string UserAgent =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LightMusic/1.2 (+https://github.com/G336ncx-bjx/light-music-player)";
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Skylark/2.0 (+https://github.com/G336ncx-bjx/skylark-music)";
 
         static CloudClient()
         {
@@ -438,7 +438,7 @@ namespace LightMusic
             string url = uploadLink + "?ret-json=1";
             if (replace) url += "&replace=1";
 
-            string boundary = "----LightMusic" + Guid.NewGuid().ToString("N");
+            string boundary = "----Skylark" + Guid.NewGuid().ToString("N");
             string fileName = Path.GetFileName(localFilePath);
             string dir = string.IsNullOrEmpty(dirPath) ? "/" : dirPath;
             if (!dir.StartsWith("/")) dir = "/" + dir;

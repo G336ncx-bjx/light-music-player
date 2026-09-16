@@ -6,7 +6,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>
     /// 锁定桌面歌词时出现的「解锁」小按钮。

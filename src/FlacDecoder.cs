@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>
     /// 内置 FLAC 解码器：把 .flac 解成 WAV，让系统播放内核也能放无损格式，

@@ -1,5 +1,5 @@
 <#
-    Light Music Player - 构建脚本
+    云雀 Skylark - 构建脚本
     使用 Windows 自带的 .NET Framework C# 编译器 (csc.exe) 生成单文件 exe，
     不依赖任何第三方库或运行时安装。
 #>
@@ -13,7 +13,7 @@ $root  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src   = Join-Path $root 'src'
 $dist  = Join-Path $root 'dist'
 $assets = Join-Path $root 'assets'
-$appName = 'LightMusic'
+$appName = 'Skylark'
 
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path $csc)) {
@@ -81,8 +81,8 @@ foreach ($name in @('WindowsBase', 'PresentationCore', 'PresentationFramework', 
 }
 
 # 内嵌 XAML 资源
-$args.Add("/resource:$src\Resources\theme.xaml,LightMusic.Theme.xaml")
-$args.Add("/resource:$src\Resources\templates.xaml,LightMusic.Templates.xaml")
+$args.Add("/resource:$src\Resources\theme.xaml,Skylark.Theme.xaml")
+$args.Add("/resource:$src\Resources\templates.xaml,Skylark.Templates.xaml")
 
 if ($Debug) {
     $args.Add('/debug:pdbonly')

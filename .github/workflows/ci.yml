@@ -23,12 +23,12 @@ jobs:
       - name: Self test
         shell: powershell
         run: |
-          $p = Start-Process -FilePath .\dist\LightMusic.exe -ArgumentList '--selftest' -PassThru -Wait
-          Get-Content "$env:TEMP\lightmusic-selftest.log" -Encoding UTF8
+          $p = Start-Process -FilePath .\dist\Skylark.exe -ArgumentList '--selftest' -PassThru -Wait
+          Get-Content "$env:TEMP\skylark-selftest.log" -Encoding UTF8
           if ($p.ExitCode -ne 0) { throw "selftest failed (exit $($p.ExitCode))" }
 
       - name: Upload exe
         uses: actions/upload-artifact@v7
         with:
-          name: LightMusic-dev
-          path: dist/LightMusic.exe
+          name: Skylark-dev
+          path: dist/Skylark.exe

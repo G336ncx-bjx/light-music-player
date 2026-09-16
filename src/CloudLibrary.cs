@@ -5,7 +5,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>把云盘分享链接当成一个音乐库来扫描。</summary>
     public static class CloudLibrary

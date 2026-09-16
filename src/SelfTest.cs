@@ -6,7 +6,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>无界面自检：歌词解析、文件名解析、时长解析、配置读写、扫描、M3U。</summary>
     public static class SelfTest
@@ -37,7 +37,7 @@ namespace LightMusic
             Console.WriteLine(text);
             try
             {
-                File.WriteAllText(Path.Combine(Path.GetTempPath(), "lightmusic-selftest.log"), text, new UTF8Encoding(true));
+                File.WriteAllText(Path.Combine(Path.GetTempPath(), "skylark-selftest.log"), text, new UTF8Encoding(true));
             }
             catch (Exception)
             {
@@ -116,7 +116,7 @@ namespace LightMusic
 
         private static void TestEncoding()
         {
-            string file = Path.Combine(Path.GetTempPath(), "lightmusic-gbk.lrc");
+            string file = Path.Combine(Path.GetTempPath(), "skylark-gbk.lrc");
             string content = "[00:01.00]中文歌词测试";
             try
             {
@@ -139,7 +139,7 @@ namespace LightMusic
             settings.Mode = PlayMode.Shuffle;
             settings.Durations.Add(new DurationEntry());
 
-            string file = Path.Combine(Path.GetTempPath(), "lightmusic-settings.json");
+            string file = Path.Combine(Path.GetTempPath(), "skylark-settings.json");
             using (FileStream fs = new FileStream(file, FileMode.Create))
             {
                 System.Runtime.Serialization.Json.DataContractJsonSerializer ser =
@@ -296,7 +296,7 @@ namespace LightMusic
 
         private static void TestScan()
         {
-            string dir = Path.Combine(Path.GetTempPath(), "lightmusic-scan");
+            string dir = Path.Combine(Path.GetTempPath(), "skylark-scan");
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
             Directory.CreateDirectory(dir);
             Directory.CreateDirectory(Path.Combine(dir, "sub"));
@@ -331,8 +331,8 @@ namespace LightMusic
 
         private static void TestM3u()
         {
-            string file = Path.Combine(Path.GetTempPath(), "lightmusic-playlist.m3u");
-            string audio = Path.Combine(Path.GetTempPath(), "lightmusic-m3u-test.mp3");
+            string file = Path.Combine(Path.GetTempPath(), "skylark-playlist.m3u");
+            string audio = Path.Combine(Path.GetTempPath(), "skylark-m3u-test.mp3");
             File.WriteAllText(audio, "x");
             List<Song> songs = new List<Song>();
             Song song = new Song();

@@ -4,7 +4,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Media;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>
     /// 仅用于开发期自检 / 截图的美化数据注入（不参与正常使用流程）。

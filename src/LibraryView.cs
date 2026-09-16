@@ -6,7 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>音乐库视图（歌曲列表 + 排序 + 右键菜单）。</summary>
     public class LibraryView : UserControl

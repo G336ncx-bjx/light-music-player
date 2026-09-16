@@ -9,7 +9,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>软件内歌词页（正在播放）：左侧唱片卡片 + 右侧逐行歌词。</summary>
     public class LyricsView : UserControl

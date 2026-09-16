@@ -4,7 +4,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.Serialization;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>播放模式</summary>
     public enum PlayMode
@@ -205,7 +205,7 @@ namespace LightMusic
         }
     }
 
-    /// <summary>应用配置，保存在 %APPDATA%\LightMusic\settings.json。</summary>
+    /// <summary>应用配置，保存在 %APPDATA%\Skylark\settings.json。</summary>
     [DataContract]
     public class AppSettings
     {

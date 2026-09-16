@@ -16,12 +16,12 @@ using System.Windows.Threading;
 using Drawing = System.Drawing;
 using Forms = System.Windows.Forms;
 
-namespace LightMusic
+namespace Skylark
 {
     public partial class MainWindow : Window
     {
-        public const string AppName = "轻音乐";
-        public const string AppVersion = "1.6.0";
+        public const string AppName = "云雀";
+        public const string AppVersion = "2.0.0";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -752,7 +752,7 @@ namespace LightMusic
 
             TextBlock appName = Ui.Text(AppName, 15, "Text", FontWeights.SemiBold);
             appName.VerticalAlignment = VerticalAlignment.Center;
-            TextBlock slogan = Ui.Text("Light Music", 10.5, "TextMuted");
+            TextBlock slogan = Ui.Text("Skylark", 10.5, "TextMuted");
             slogan.VerticalAlignment = VerticalAlignment.Center;
             StackPanel nameColumn = Ui.Column(1, appName, slogan);
             nameColumn.VerticalAlignment = VerticalAlignment.Center;
@@ -2284,7 +2284,7 @@ namespace LightMusic
             if (!Headless) return;
             try
             {
-                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lightmusic-smoke.log");
+                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "skylark-smoke.log");
                 using (System.IO.FileStream fs = new System.IO.FileStream(path, System.IO.FileMode.Append,
                     System.IO.FileAccess.Write, System.IO.FileShare.ReadWrite))
                 using (System.IO.StreamWriter writer = new System.IO.StreamWriter(fs, System.Text.Encoding.UTF8))

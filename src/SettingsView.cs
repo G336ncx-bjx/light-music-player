@@ -7,7 +7,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using Forms = System.Windows.Forms;
 
-namespace LightMusic
+namespace Skylark
 {
     /// <summary>设置页面。</summary>
     public class SettingsView : UserControl
