@@ -76,6 +76,12 @@ namespace LightMusic
 
         public void Open(Song song, bool autoPlay, double startAt)
         {
+            Open(song, song == null ? null : song.Path, autoPlay, startAt);
+        }
+
+        /// <summary>打开歌曲；云盘歌曲可以传入已缓存到本地的路径。</summary>
+        public void Open(Song song, string localPath, bool autoPlay, double startAt)
+        {
             if (song == null) return;
             current = song;
             playing = false;
@@ -85,7 +91,7 @@ namespace LightMusic
             pendingPlay = autoPlay;
             try
             {
-                player.Open(new Uri(song.Path));
+                player.Open(new Uri(localPath));
             }
             catch (Exception ex)
             {

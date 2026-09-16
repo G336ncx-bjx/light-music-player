@@ -39,6 +39,16 @@ namespace LightMusic
         public List<string> Artists { get; set; }
         public string Album { get; set; }
         public string LyricPath { get; set; }
+
+        /// <summary>云盘歌曲：扫描时后台拉取的歌词文本。</summary>
+        public string LyricText { get; set; }
+
+        /// <summary>是否为云盘歌曲。</summary>
+        public bool IsCloud { get; set; }
+
+        /// <summary>云盘上的相对路径（以 / 开头）。</summary>
+        public string CloudPath { get; set; }
+
         public long Size { get; set; }
         public long ModifiedTicks { get; set; }
 
@@ -51,6 +61,7 @@ namespace LightMusic
             Title = string.Empty;
             Artist = string.Empty;
             Album = string.Empty;
+            CloudPath = string.Empty;
             Artists = new List<string>();
         }
 
@@ -304,6 +315,18 @@ namespace LightMusic
         [DataMember(Name = "lastView", Order = 34)]
         public string LastView { get; set; }
 
+        /// <summary>音乐来源：local（本地文件夹）/ cloud（云盘分享链接）</summary>
+        [DataMember(Name = "source", Order = 35)]
+        public string Source { get; set; }
+
+        /// <summary>云盘分享链接（或 token）。</summary>
+        [DataMember(Name = "cloudUrl", Order = 36)]
+        public string CloudUrl { get; set; }
+
+        /// <summary>云端歌曲播放时是否保留本地缓存（缓存后可离线重听）。</summary>
+        [DataMember(Name = "cloudCache", Order = 37)]
+        public bool CloudCacheEnabled { get; set; }
+
         public AppSettings()
         {
             MusicDir = string.Empty;
@@ -327,6 +350,9 @@ namespace LightMusic
             Durations = new List<DurationEntry>();
             MediaKeys = true;
             LastView = "library";
+            Source = "cloud";
+            CloudUrl = string.Empty;
+            CloudCacheEnabled = true;
             CloseToTray = false;
             ResumeLast = true;
         }

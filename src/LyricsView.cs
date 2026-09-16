@@ -409,13 +409,28 @@ namespace LightMusic
                 return;
             }
 
-            LyricDocument doc = LrcParser.Load(song.LyricPath);
+            LyricDocument doc;
+            if (song.IsCloud && !string.IsNullOrEmpty(song.LyricText))
+            {
+                doc = LrcParser.Parse(song.LyricText);
+                doc.Found = doc.Lines.Count > 0;
+            }
+            else if (song.IsCloud)
+            {
+                doc = new LyricDocument();
+                doc.Found = false;
+                doc.Message = song.HasLyrics ? "正在从云盘获取歌词…" : "这首歌还没有歌词";
+            }
+            else
+            {
+                doc = LrcParser.Load(song.LyricPath);
+            }
             if (!doc.Found || doc.Lines.Count == 0)
             {
                 synced = false;
                 string baseName = System.IO.Path.GetFileNameWithoutExtension(song.FileName);
                 statusText.Text = (string.IsNullOrEmpty(song.LyricPath) ? "这首歌还没有歌词" : doc.Message) +
-                    "\n\n把歌词文件放在歌曲同一个目录，文件名与歌曲相同：\n" + baseName + ".lrc";
+                    (song.IsCloud ? "" : "\n\n把歌词文件放在歌曲同一个目录，文件名与歌曲相同：\n" + baseName + ".lrc");
                 statusPanel.Visibility = Visibility.Visible;
                 UpdateSpacers();
                 return;

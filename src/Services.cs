@@ -119,7 +119,13 @@ namespace LightMusic
         /// <summary>按 BOM / UTF-8 / GBK 顺序猜测文本编码读取。</summary>
         public static string ReadAllTextSmart(string path)
         {
-            byte[] bytes = File.ReadAllBytes(path);
+            return DecodeBytes(File.ReadAllBytes(path));
+        }
+
+        /// <summary>按 BOM / UTF-8 / GBK 顺序猜测编码解码字节数组。</summary>
+        public static string DecodeBytes(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0) return string.Empty;
             if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
                 return new UTF8Encoding(false).GetString(bytes, 3, bytes.Length - 3);
             if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
@@ -364,10 +370,10 @@ namespace LightMusic
             string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
             try
             {
-                if (ext == ".mp3") return ReadMp3(path);
-                if (ext == ".flac") return ReadFlac(path);
-                if (ext == ".wav") return ReadWav(path);
-                if (ext == ".m4a" || ext == ".mp4" || ext == ".aac") return ReadMp4(path);
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    return Read(fs, fs.Length, ext);
+                }
             }
             catch (Exception)
             {
@@ -375,11 +381,42 @@ namespace LightMusic
             return 0;
         }
 
-        private static double ReadMp3(string path)
+        /// <summary>从已读取的文件头（也可以是 HTTP Range 拿到的前若干 KB）解析时长。</summary>
+        public static double ReadBytes(byte[] head, long totalLength, string ext)
         {
-            using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            if (head == null || head.Length == 0) return 0;
+            try
             {
-                long len = fs.Length;
+                using (MemoryStream fs = new MemoryStream(head, false))
+                {
+                    return Read(fs, totalLength, ext.ToLowerInvariant());
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return 0;
+        }
+
+        public static double Read(Stream fs, long totalLength, string ext)
+        {
+            try
+            {
+                if (ext == ".mp3") return ReadMp3(fs, totalLength);
+                if (ext == ".flac") return ReadFlac(fs, totalLength);
+                if (ext == ".wav") return ReadWav(fs, totalLength);
+                if (ext == ".m4a" || ext == ".mp4" || ext == ".aac") return ReadMp4(fs, totalLength);
+            }
+            catch (Exception)
+            {
+            }
+            return 0;
+        }
+
+        private static double ReadMp3(Stream fs, long totalLength)
+        {
+            {
+                long len = totalLength;
                 byte[] head = new byte[10];
                 if (fs.Read(head, 0, 10) < 10) return 0;
                 long start = 0;
@@ -475,9 +512,8 @@ namespace LightMusic
             }
         }
 
-        private static double ReadFlac(string path)
+        private static double ReadFlac(Stream fs, long totalLength)
         {
-            using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
                 byte[] buf = new byte[42];
                 if (fs.Read(buf, 0, buf.Length) < 42) return 0;
@@ -494,9 +530,8 @@ namespace LightMusic
             }
         }
 
-        private static double ReadWav(string path)
+        private static double ReadWav(Stream fs, long totalLength)
         {
-            using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
                 BinaryReader br = new BinaryReader(fs);
                 if (new string(br.ReadChars(4)) != "RIFF") return 0;
@@ -504,7 +539,7 @@ namespace LightMusic
                 if (new string(br.ReadChars(4)) != "WAVE") return 0;
                 long byteRate = 0;
                 long dataSize = 0;
-                while (fs.Position + 8 <= fs.Length)
+                while (fs.Position + 8 <= totalLength)
                 {
                     string id = new string(br.ReadChars(4));
                     int size = br.ReadInt32();
@@ -520,7 +555,7 @@ namespace LightMusic
                     {
                         dataSize = size;
                     }
-                    if (next <= fs.Position || next > fs.Length) break;
+                    if (next <= fs.Position || next > totalLength) break;
                     fs.Position = next;
                 }
                 if (byteRate <= 0 || dataSize <= 0) return 0;
@@ -528,15 +563,12 @@ namespace LightMusic
             }
         }
 
-        private static double ReadMp4(string path)
+        private static double ReadMp4(Stream fs, long totalLength)
         {
-            using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            {
-                return ReadMp4Atoms(fs, 0, fs.Length, 0);
-            }
+            return ReadMp4Atoms(fs, 0, totalLength, 0);
         }
 
-        private static double ReadMp4Atoms(FileStream fs, long start, long end, int depth)
+        private static double ReadMp4Atoms(Stream fs, long start, long end, int depth)
         {
             if (depth > 4) return 0;
             long pos = start;
