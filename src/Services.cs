@@ -299,6 +299,7 @@ namespace Skylark
             List<LyricLine> lines = new List<LyricLine>();
             bool synced = false;
             double offset = 0;
+            string titleTag = null;
 
             for (int i = 0; i < rawLines.Length; i++)
             {
@@ -324,6 +325,10 @@ namespace Skylark
                         if (double.TryParse(tag.Substring(7).Trim(), NumberStyles.Float,
                                 CultureInfo.InvariantCulture, out off))
                             offset = off / 1000.0;
+                    }
+                    else if (tag.StartsWith("ti:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        titleTag = tag.Substring(3).Trim();
                     }
                     pos = end + 1;
                 }
@@ -353,7 +358,7 @@ namespace Skylark
             if (synced)
             {
                 // 按文件顺序把译文并到它自己的原文上（细节见 MergeTranslations）
-                lines = MergeTranslations(lines);
+                lines = MergeTranslations(lines, titleTag);
                 // 稳定排序：同一时间戳保持原有先后顺序
                 lines = new List<LyricLine>(lines.OrderBy(delegate(LyricLine line) { return line.Time; }));
             }
@@ -372,10 +377,9 @@ namespace Skylark
         /// 两种写法里「译文都紧跟在它自己的原文之后」，所以按文件顺序配对、并沿用原文的时间戳；
         /// 老写法「同一时间戳取第二行当译文」在 B 里会把上一句的译文配到下一句原文上，才会出现错位。
         ///
-        /// 判断哪一行是译文：先看整篇歌词的主要语言 —— 含假名算日文、只有汉字算中文、都不含算拉丁/其它，
-        /// 出现次数最多的那种语言当作原文；几种语言数量相同时以第一行为原文。
+        /// 判断哪一行是译文：用 [ti:标题] 的语言（其次看第一行、最后看多数派），细节见 PickOriginalLanguage。
         /// </summary>
-        private static List<LyricLine> MergeTranslations(List<LyricLine> lines)
+        private static List<LyricLine> MergeTranslations(List<LyricLine> lines, string titleTag)
         {
             if (lines.Count == 0) return lines;
 
@@ -388,11 +392,8 @@ namespace Skylark
                 else latin++;
             }
 
-            string original;
-            if (zh > ja && zh >= latin) original = "zh";
-            else if (ja > zh && ja >= latin) original = "ja";
-            else if (latin > zh && latin > ja) original = "latin";
-            else original = ScriptOf(lines[0].Text);   // 数量相同：以第一行为原文
+            string original = PickOriginalLanguage(titleTag, ScriptOf(lines[0].Text),
+                zh, ja, latin, lines.Count);
 
             List<LyricLine> result = new List<LyricLine>();
             LyricLine pending = null;   // 还没配到译文的原文
@@ -419,6 +420,34 @@ namespace Skylark
         }
 
         /// <summary>粗略判断一行歌词属于哪种文字：ja 含假名 / zh 只有汉字 / latin 其它。</summary>
+        /// <summary>
+        /// 判断整篇歌词里哪种文字是「原文」：
+        ///   1) 优先用 [ti:标题] 的语言——标题一般就是原文语言
+        ///      （实测《Take Me Hand》=latin、《願い～あの頃のキミへ～》=ja，两首都判对）；
+        ///   2) 没有标题标签时用第一行的语言，并要求它在全篇占比不低于 1/4；
+        ///   3) 再不行才用出现最多的那种语言（并列时以第一行为准）。
+        /// 不能只看「谁多」：日语歌的中文译文里常多出「词：/曲：」这类信息行，
+        /// 可能比原文还多一行，那样就会把译文当成原文，整篇配对错位。
+        /// </summary>
+        private static string PickOriginalLanguage(string titleTag, string firstKind,
+            int zh, int ja, int latin, int total)
+        {
+            string titleKind = ScriptOf(titleTag);
+            if (!string.IsNullOrEmpty(titleTag) && CountOf(titleKind, zh, ja, latin) > 0) return titleKind;
+            if (CountOf(firstKind, zh, ja, latin) * 4 >= total) return firstKind;
+            if (zh > ja && zh >= latin) return "zh";
+            if (ja > zh && ja >= latin) return "ja";
+            if (latin > zh && latin > ja) return "latin";
+            return firstKind;
+        }
+
+        private static int CountOf(string kind, int zh, int ja, int latin)
+        {
+            if (kind == "ja") return ja;
+            if (kind == "zh") return zh;
+            return latin;
+        }
+
         private static string ScriptOf(string text)
         {
             if (string.IsNullOrEmpty(text)) return "latin";

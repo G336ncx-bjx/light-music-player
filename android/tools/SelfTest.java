@@ -125,6 +125,28 @@ public class SelfTest {
             check("歌词：时间用原文的时间戳", near(bilingual.lines.get(1).time, 61.66));
             check("歌词：定位到第二句", bilingual.indexAt(62.0) == 1);
         }
+
+        // 真实场景：日文歌 + 中文译文，而且中文那侧多出「词：/曲：」信息行，
+        // 按「谁多谁是原文」会判反，必须用 [ti:标题] 的语言来定
+        String jp = "[ti:願い～あの頃のキミへ～ (祈愿~致那个时候的你～)]\n"
+                + "[00:00.24]願い～あの頃のキミへ～ - 當山みれい\n"
+                + "[00:06.15]词：Dohzi-T\n"
+                + "[00:14.94]二人の思い出 かき集めたなら\n"
+                + "[00:20.63]回想起和你之间的回忆\n"
+                + "[00:20.63]また泣けてきちゃう 寂しさ溢れて\n"
+                + "[00:26.34]又会令我落泪 令我感到寂寞\n"
+                + "[00:26.34]最後の恋だと 信じて願った\n";
+        Lrc jpLrc = Lrc.parse(jp);
+        boolean jpOk = false;
+        for (int i = 0; i < jpLrc.lines.size(); i++) {
+            Lrc.Line line = jpLrc.lines.get(i);
+            if ("二人の思い出 かき集めたなら".equals(line.text)
+                    && "回想起和你之间的回忆".equals(line.translation)) {
+                jpOk = true;
+                break;
+            }
+        }
+        check("歌词：日文歌不会把中文译文当原文", jpOk);
     }
 
     // ---------- 工具 ----------

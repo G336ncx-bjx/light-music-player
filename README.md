@@ -261,6 +261,9 @@ dist\Skylark.exe --smoke
 # 验证桌面歌词“锁定”是否真的鼠标穿透（用 WindowFromPoint 做命中测试）
 dist\Skylark.exe --lockcheck
 
+# 核对双语歌词的配对：打印成 [时间] 原文 || 译文
+dist\Skylark.exe --lyricdump "D:\某个歌词.lrc"
+
 # 把本地文件夹里的歌一次性补齐到云端（缺的上传、同名同大小跳过、大小不同覆盖）
 dist\Skylark.exe --uploadall <令牌或分享链接> "D:\某个文件夹"
 

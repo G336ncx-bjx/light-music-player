@@ -111,6 +111,27 @@ namespace Skylark
                 shiftedDetail += "[" + line.Text + "|" + line.Translation + "@" + line.Time.ToString("0.00") + "]";
             Check("歌词：译文带错位时间戳也配对", shiftedPaired, shiftedDetail);
 
+            // 真实场景：日文歌 + 中文译文，而且中文那侧多出「词：/曲：」信息行，
+            // 按「谁多谁是原文」会判反，必须用 [ti:标题] 的语言来定
+            LyricDocument jp = LrcParser.Parse(
+                "[ti:願い～あの頃のキミへ～ (祈愿~致那个时候的你～)]\n" +
+                "[00:00.24]願い～あの頃のキミへ～ - 當山みれい\n" +
+                "[00:06.15]词：Dohzi-T\n" +
+                "[00:14.94]二人の思い出 かき集めたなら\n" +
+                "[00:20.63]回想起和你之间的回忆\n" +
+                "[00:20.63]また泣けてきちゃう 寂しさ溢れて\n" +
+                "[00:26.34]又会令我落泪 令我感到寂寞\n" +
+                "[00:26.34]最後の恋だと 信じて願った\n");
+            bool jpOk = false;
+            string jpDetail = "";
+            foreach (LyricLine line in jp.Lines)
+            {
+                if (line.Text == "二人の思い出 かき集めたなら"
+                    && line.Translation == "回想起和你之间的回忆") jpOk = true;
+                jpDetail += "[" + line.Text + "|" + line.Translation + "]";
+            }
+            Check("歌词：日文歌不会把中文译文当原文", jpOk, jpDetail);
+
             LyricDocument plain = LrcParser.Parse("第一行\n第二行\n");
             Check("歌词：纯文本歌词", !plain.Synced && plain.Lines.Count == 2, plain.Lines.Count + " 行");
 

@@ -28,6 +28,7 @@ public class Lrc {
 
         List<Line> raw = new ArrayList<Line>();
         double offset = 0;
+        String titleTag = null;
         String[] rows = text.replace("\r\n", "\n").replace('\r', '\n').split("\n");
         for (int i = 0; i < rows.length; i++) {
             String row = rows[i].trim();
@@ -49,6 +50,8 @@ public class Lrc {
                     } catch (Exception e) {
                         // 忽略非法 offset
                     }
+                } else if (tag.toLowerCase().startsWith("ti:")) {
+                    titleTag = tag.substring(3).trim();
                 }
                 pos = end + 1;
             }
@@ -76,7 +79,7 @@ public class Lrc {
         }
 
         // 先按文件顺序把译文并到它自己的原文上（细节见 mergeTranslations），再按时间排序
-        List<Line> merged = mergeTranslations(raw);
+        List<Line> merged = mergeTranslations(raw, titleTag);
         Collections.sort(merged, new Comparator<Line>() {
             public int compare(Line a, Line b) {
                 return Double.compare(a.time, b.time);
@@ -92,10 +95,11 @@ public class Lrc {
      *   B) 译文紧跟在原文之后，但时间戳被标成了下一句的时间
      *      （例如 [00:59.99]In my dreams / [01:01.66]我的梦里 / [01:01.66]I feel your light）。
      * 两种写法里「译文都紧跟在它自己的原文之后」，所以按文件顺序配对、沿用原文的时间戳。
-     * 判断哪行是译文：整篇里含假名算日文、只有汉字算中文、都不含算拉丁/其它，
-     * 出现最多的那种语言当作原文；数量相同时以第一行为原文。
+     * 判断哪行是译文：优先用 [ti:标题] 的语言（标题一般就是原文语言），
+     * 其次用第一行的语言，最后才用出现最多的那种语言。
+     * 不能只看谁多：日语歌的中文译文常多出「词：/曲：」这类信息行，可能比原文还多一行。
      */
-    private static List<Line> mergeTranslations(List<Line> lines) {
+    private static List<Line> mergeTranslations(List<Line> lines, String titleTag) {
         if (lines.isEmpty()) return lines;
         int zh = 0, ja = 0, latin = 0;
         for (int i = 0; i < lines.size(); i++) {
@@ -104,11 +108,7 @@ public class Lrc {
             else if ("zh".equals(kind)) zh++;
             else latin++;
         }
-        String original;
-        if (zh > ja && zh >= latin) original = "zh";
-        else if (ja > zh && ja >= latin) original = "ja";
-        else if (latin > zh && latin > ja) original = "latin";
-        else original = scriptOf(lines.get(0).text);
+        String original = pickOriginalLanguage(titleTag, scriptOf(lines.get(0).text), zh, ja, latin, lines.size());
 
         List<Line> result = new ArrayList<Line>();
         Line pending = null;
@@ -128,6 +128,26 @@ public class Lrc {
             result.add(line);
         }
         return result;
+    }
+
+    /** 哪种文字是原文：优先标题语言 → 第一行语言（占比 ≥ 1/4）→ 多数派。 */
+    private static String pickOriginalLanguage(String titleTag, String firstKind,
+                                               int zh, int ja, int latin, int total) {
+        String titleKind = scriptOf(titleTag);
+        if (titleTag != null && titleTag.length() > 0 && countOf(titleKind, zh, ja, latin) > 0) {
+            return titleKind;
+        }
+        if (countOf(firstKind, zh, ja, latin) * 4 >= total) return firstKind;
+        if (zh > ja && zh >= latin) return "zh";
+        if (ja > zh && ja >= latin) return "ja";
+        if (latin > zh && latin > ja) return "latin";
+        return firstKind;
+    }
+
+    private static int countOf(String kind, int zh, int ja, int latin) {
+        if ("ja".equals(kind)) return ja;
+        if ("zh".equals(kind)) return zh;
+        return latin;
     }
 
     /** 粗略判断一行歌词属于哪种文字：ja 含假名 / zh 只有汉字 / latin 其它。 */

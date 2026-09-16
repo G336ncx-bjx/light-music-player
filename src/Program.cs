@@ -62,6 +62,12 @@ namespace Skylark
                 Environment.Exit(StreamTest(args.Length > 1 ? args[1] : null));
                 return;
             }
+            if (args.Length > 0 && args[0] == "--lyricdump")
+            {
+                AttachConsole();
+                Environment.Exit(LyricDump(args.Length > 1 ? args[1] : null));
+                return;
+            }
             if (args.Length > 0 && args[0] == "--cloudtest")
             {
                 AttachConsole();
@@ -302,6 +308,41 @@ namespace Skylark
         }
 
         /// <summary>真实启动一次界面（显示窗口若干秒后自动退出），用于冒烟测试。</summary>
+        /// <summary>
+        /// 把歌词文件按 App 内解析器解析的结果打印出来，用于核对双语配对：
+        /// 每行格式 [时间] 原文 || 译文
+        /// </summary>
+        private static int LyricDump(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                Console.WriteLine("usage: Skylark.exe --lyricdump <歌词文件路径>");
+                return 1;
+            }
+            try
+            {
+                LyricDocument doc = LrcParser.Load(path);
+                if (!doc.Found)
+                {
+                    Console.WriteLine("解析失败：" + doc.Message);
+                    return 1;
+                }
+                Console.WriteLine("文件：" + path);
+                Console.WriteLine("同步：" + doc.Synced + "，共 " + doc.Lines.Count + " 行");
+                foreach (LyricLine line in doc.Lines)
+                {
+                    Console.WriteLine("[" + line.Time.ToString("0.00").PadLeft(7) + "] "
+                        + line.Text + (string.IsNullOrEmpty(line.Translation) ? "" : "   ||   " + line.Translation));
+                }
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("lyricdump failed: " + ex.Message);
+                return 1;
+            }
+        }
+
         private static int StreamTest(string url)
         {
             if (string.IsNullOrEmpty(url))
