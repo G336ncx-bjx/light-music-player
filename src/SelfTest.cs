@@ -95,6 +95,22 @@ namespace Skylark
             }
             Check("歌词：翻译行合并", hasTranslation, detail);
 
+            // 双语歌词的另一种写法：译文紧跟原文，但时间戳被标成下一句的时间
+            // （云盘上《Take Me Hand》《願い～あの頃のキミへ～》就是这种）
+            LyricDocument shifted = LrcParser.Parse(
+                "[00:59.99]In my dreams\n[01:01.66]我的梦里\n[01:01.66]I feel your light\n" +
+                "[01:03.60]有你的光芒\n[01:03.60]I feel love is born again\n" +
+                "[01:07.32]爱再次绽放\n[01:07.32]Fireflies\n");
+            bool shiftedPaired = shifted.Lines.Count == 4 && shifted.Lines[0].Translation == "我的梦里"
+                && shifted.Lines[0].Text == "In my dreams"
+                && shifted.Lines[1].Translation == "有你的光芒"
+                && shifted.Lines[1].Text == "I feel your light"
+                && Math.Abs(shifted.Lines[1].Time - 61.66) < 0.01;
+            string shiftedDetail = "";
+            foreach (LyricLine line in shifted.Lines)
+                shiftedDetail += "[" + line.Text + "|" + line.Translation + "@" + line.Time.ToString("0.00") + "]";
+            Check("歌词：译文带错位时间戳也配对", shiftedPaired, shiftedDetail);
+
             LyricDocument plain = LrcParser.Parse("第一行\n第二行\n");
             Check("歌词：纯文本歌词", !plain.Synced && plain.Lines.Count == 2, plain.Lines.Count + " 行");
 

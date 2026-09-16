@@ -75,26 +75,75 @@ public class Lrc {
             return lrc;
         }
 
-        Collections.sort(raw, new Comparator<Line>() {
+        // 先按文件顺序把译文并到它自己的原文上（细节见 mergeTranslations），再按时间排序
+        List<Line> merged = mergeTranslations(raw);
+        Collections.sort(merged, new Comparator<Line>() {
             public int compare(Line a, Line b) {
                 return Double.compare(a.time, b.time);
             }
         });
-
-        List<Line> merged = new ArrayList<Line>();
-        for (int i = 0; i < raw.size(); i++) {
-            Line cur = raw.get(i);
-            if (!merged.isEmpty()) {
-                Line prev = merged.get(merged.size() - 1);
-                if (Math.abs(prev.time - cur.time) < 0.05 && prev.translation.length() == 0) {
-                    prev.translation = cur.text;
-                    continue;
-                }
-            }
-            merged.add(cur);
-        }
         lrc.lines = merged;
         return lrc;
+    }
+
+    /**
+     * 双语歌词配对。两种常见写法都要照顾：
+     *   A) 原文与译文同一时间戳（原文在前、译文在后）；
+     *   B) 译文紧跟在原文之后，但时间戳被标成了下一句的时间
+     *      （例如 [00:59.99]In my dreams / [01:01.66]我的梦里 / [01:01.66]I feel your light）。
+     * 两种写法里「译文都紧跟在它自己的原文之后」，所以按文件顺序配对、沿用原文的时间戳。
+     * 判断哪行是译文：整篇里含假名算日文、只有汉字算中文、都不含算拉丁/其它，
+     * 出现最多的那种语言当作原文；数量相同时以第一行为原文。
+     */
+    private static List<Line> mergeTranslations(List<Line> lines) {
+        if (lines.isEmpty()) return lines;
+        int zh = 0, ja = 0, latin = 0;
+        for (int i = 0; i < lines.size(); i++) {
+            String kind = scriptOf(lines.get(i).text);
+            if ("ja".equals(kind)) ja++;
+            else if ("zh".equals(kind)) zh++;
+            else latin++;
+        }
+        String original;
+        if (zh > ja && zh >= latin) original = "zh";
+        else if (ja > zh && ja >= latin) original = "ja";
+        else if (latin > zh && latin > ja) original = "latin";
+        else original = scriptOf(lines.get(0).text);
+
+        List<Line> result = new ArrayList<Line>();
+        Line pending = null;
+        for (int i = 0; i < lines.size(); i++) {
+            Line line = lines.get(i);
+            if (scriptOf(line.text).equals(original)) {
+                result.add(line);
+                pending = line;
+                continue;
+            }
+            if (pending != null && pending.translation.length() == 0
+                    && line.time - pending.time <= 15.0) {
+                pending.translation = line.text;
+                pending = null;
+                continue;
+            }
+            result.add(line);
+        }
+        return result;
+    }
+
+    /** 粗略判断一行歌词属于哪种文字：ja 含假名 / zh 只有汉字 / latin 其它。 */
+    private static String scriptOf(String text) {
+        if (text == null) return "latin";
+        boolean hasKana = false, hasIdeograph = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if ((c >= 0x3040 && c <= 0x30FF) || (c >= 0x31F0 && c <= 0x31FF)) {
+                hasKana = true;
+                break;
+            }
+            if (c >= 0x4E00 && c <= 0x9FFF) hasIdeograph = true;
+        }
+        if (hasKana) return "ja";
+        return hasIdeograph ? "zh" : "latin";
     }
 
     private static Double parseTimeTag(String tag) {

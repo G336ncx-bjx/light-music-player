@@ -352,31 +352,86 @@ namespace Skylark
 
             if (synced)
             {
-                // 稳定排序：同一时间戳的行保持原有先后顺序，第二行才会被识别为翻译
+                // 按文件顺序把译文并到它自己的原文上（细节见 MergeTranslations）
+                lines = MergeTranslations(lines);
+                // 稳定排序：同一时间戳保持原有先后顺序
                 lines = new List<LyricLine>(lines.OrderBy(delegate(LyricLine line) { return line.Time; }));
-                // 同一时间戳的第二行作为翻译
-                List<LyricLine> merged = new List<LyricLine>();
-                for (int i = 0; i < lines.Count; i++)
-                {
-                    LyricLine cur = lines[i];
-                    if (merged.Count > 0)
-                    {
-                        LyricLine prev = merged[merged.Count - 1];
-                        if (Math.Abs(prev.Time - cur.Time) < 0.05 && string.IsNullOrEmpty(prev.Translation))
-                        {
-                            prev.Translation = cur.Text;
-                            continue;
-                        }
-                    }
-                    merged.Add(cur);
-                }
-                lines = merged;
             }
 
             doc.Lines = lines;
             doc.Synced = synced;
             doc.OffsetSeconds = offset;
             return doc;
+        }
+
+        /// <summary>
+        /// 双语歌词配对。两种常见写法都要照顾：
+        ///   A) 原文与译文同一时间戳（原文在前、译文在后）；
+        ///   B) 译文紧跟在原文之后，但时间戳被标成了下一句的时间
+        ///      （例如 [00:59.99]In my dreams / [01:01.66]我的梦里 / [01:01.66]I feel your light）。
+        /// 两种写法里「译文都紧跟在它自己的原文之后」，所以按文件顺序配对、并沿用原文的时间戳；
+        /// 老写法「同一时间戳取第二行当译文」在 B 里会把上一句的译文配到下一句原文上，才会出现错位。
+        ///
+        /// 判断哪一行是译文：先看整篇歌词的主要语言 —— 含假名算日文、只有汉字算中文、都不含算拉丁/其它，
+        /// 出现次数最多的那种语言当作原文；几种语言数量相同时以第一行为原文。
+        /// </summary>
+        private static List<LyricLine> MergeTranslations(List<LyricLine> lines)
+        {
+            if (lines.Count == 0) return lines;
+
+            int zh = 0, ja = 0, latin = 0;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string kind = ScriptOf(lines[i].Text);
+                if (kind == "ja") ja++;
+                else if (kind == "zh") zh++;
+                else latin++;
+            }
+
+            string original;
+            if (zh > ja && zh >= latin) original = "zh";
+            else if (ja > zh && ja >= latin) original = "ja";
+            else if (latin > zh && latin > ja) original = "latin";
+            else original = ScriptOf(lines[0].Text);   // 数量相同：以第一行为原文
+
+            List<LyricLine> result = new List<LyricLine>();
+            LyricLine pending = null;   // 还没配到译文的原文
+            for (int i = 0; i < lines.Count; i++)
+            {
+                LyricLine line = lines[i];
+                if (ScriptOf(line.Text) == original)
+                {
+                    result.Add(line);
+                    pending = line;
+                    continue;
+                }
+                // 译文：贴到上一句原文上（时间差太大就不硬配，免得张冠李戴）
+                if (pending != null && string.IsNullOrEmpty(pending.Translation)
+                    && line.Time - pending.Time <= 15.0)
+                {
+                    pending.Translation = line.Text;
+                    pending = null;
+                    continue;
+                }
+                result.Add(line);
+            }
+            return result;
+        }
+
+        /// <summary>粗略判断一行歌词属于哪种文字：ja 含假名 / zh 只有汉字 / latin 其它。</summary>
+        private static string ScriptOf(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "latin";
+            bool hasKana = false, hasIdeograph = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if ((c >= 0x3040 && c <= 0x30FF) || (c >= 0x31F0 && c <= 0x31FF)) hasKana = true;
+                else if (c >= 0x4E00 && c <= 0x9FFF) hasIdeograph = true;
+                if (hasKana) break;
+            }
+            if (hasKana) return "ja";
+            return hasIdeograph ? "zh" : "latin";
         }
 
         private static bool TryParseTimeTag(string tag, out double seconds)

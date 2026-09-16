@@ -102,6 +102,29 @@ public class SelfTest {
         Lrc plain = Lrc.parse("这是一行纯文本歌词\n第二行");
         check("歌词：纯文本不算同步", !plain.synced && plain.lines.size() == 2);
         check("歌词：空文本不报错", Lrc.parse("").lines.isEmpty());
+
+        // 双语歌词的另一种写法：译文紧跟原文，但时间戳被标成下一句的时间
+        // （云盘上《Take Me Hand》《願い～あの頃のキミへ～》就是这种）
+        String shifted = "[00:59.99]In my dreams\n"
+                + "[01:01.66]我的梦里\n"
+                + "[01:01.66]I feel your light\n"
+                + "[01:03.60]有你的光芒\n"
+                + "[01:03.60]I feel love is born again\n"
+                + "[01:07.32]爱再次绽放\n"
+                + "[01:07.32]Fireflies\n";
+        Lrc bilingual = Lrc.parse(shifted);
+        check("歌词：译文错位的时间戳也能配对", bilingual.lines.size() == 4,
+                "得到 " + bilingual.lines.size() + " 行");
+        if (bilingual.lines.size() >= 4) {
+            check("歌词：原文是外语、译文是中文",
+                    "In my dreams".equals(bilingual.lines.get(0).text)
+                            && "我的梦里".equals(bilingual.lines.get(0).translation));
+            check("歌词：第二句配对不错位",
+                    "I feel your light".equals(bilingual.lines.get(1).text)
+                            && "有你的光芒".equals(bilingual.lines.get(1).translation));
+            check("歌词：时间用原文的时间戳", near(bilingual.lines.get(1).time, 61.66));
+            check("歌词：定位到第二句", bilingual.indexAt(62.0) == 1);
+        }
     }
 
     // ---------- 工具 ----------
