@@ -498,7 +498,7 @@ namespace LightMusic
 
                 if (line.HasTranslation)
                 {
-                    TextBlock translation = Ui.Text(line.Translation, 12.5, "TextMuted");
+                    TextBlock translation = Ui.Text(line.Translation, 14, "TextDim");
                     translation.TextWrapping = TextWrapping.Wrap;
                     translation.TextAlignment = TextAlignment.Center;
                     translation.Margin = new Thickness(0, 2, 0, 0);

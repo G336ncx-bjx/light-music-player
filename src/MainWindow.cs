@@ -21,7 +21,7 @@ namespace LightMusic
     public partial class MainWindow : Window
     {
         public const string AppName = "轻音乐";
-        public const string AppVersion = "1.4.1";
+        public const string AppVersion = "1.5.0";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -1197,7 +1197,6 @@ namespace LightMusic
             scanning = false;
             settings.Durations = result.Cache;
             library = result.Songs;
-            SaveSettings();
             ApplyFilter();
             Raise(LibraryChanged);
 
@@ -1206,8 +1205,10 @@ namespace LightMusic
             UpdateStatusText();
             SettingsChangedSafe();
 
-            // 恢复队列中已失效的歌曲
+            // 恢复上次的播放队列：必须放在 SaveSettings 之前，
+            // 否则会用当前（空）队列覆盖配置文件里保存的播放列表
             if (!restoreAttempted && settings.Queue.Count > 0) RestoreQueue();
+            SaveSettings();
 
             ShowToast(library.Count == 0
                 ? "没有找到音乐文件，请检查音乐目录"
@@ -1871,6 +1872,8 @@ namespace LightMusic
             if (queueButton != null)
                 queueButton.ToolTip = "播放队列（" + queue.Count + " 首）";
             if (queueView != null) queueView.RefreshItems();
+            // 播放列表变化后落盘，下次打开自动接着上次的列表
+            SaveSettingsDebounced();
         }
 
         private void UpdateLyrics()

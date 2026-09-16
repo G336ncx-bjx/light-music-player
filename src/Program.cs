@@ -137,6 +137,12 @@ namespace LightMusic
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
 
         [DllImport("user32.dll")]
+        private static extern bool SetCursorPos(int X, int Y);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT point);
+
+        [DllImport("user32.dll")]
         private static extern IntPtr WindowFromPoint(POINT point);
 
         [DllImport("user32.dll")]
@@ -200,6 +206,20 @@ namespace LightMusic
                     unlockVisible = unlock.IsVisible;
                 }
 
+                // 鼠标靠近才显示 / 离开后自动隐藏
+                POINT origin;
+                GetCursorPos(out origin);
+                RECT lyricRect;
+                GetWindowRect(handle, out lyricRect);
+                SetCursorPos((lyricRect.Left + lyricRect.Right) / 2, (lyricRect.Top + lyricRect.Bottom) / 2);
+                Pump(0.8);
+                bool shownWhenNear = lyrics.UnlockButton != null && lyrics.UnlockButton.IsVisible;
+                SetCursorPos(4, 4);
+                Pump(2.2);
+                bool hiddenWhenFar = lyrics.UnlockButton == null || !lyrics.UnlockButton.IsVisible;
+                SetCursorPos(origin.X, origin.Y);
+                Pump(0.3);
+
                 main.SetLyricLocked(original, false);
                 main.ShowDesktopLyrics(false);
 
@@ -215,9 +235,11 @@ namespace LightMusic
                 Report(report, "锁定后 WS_EX_NOACTIVATE     = " + noActivate + "（期望 True，不抢焦点）");
                 Report(report, "锁定后 WS_EX_TOOLWINDOW     = " + toolWindow + "（期望 True，不占 Alt+Tab）");
                 Report(report, "锁定后解锁按钮可见可点     = " + (unlockVisible && unlockClickable) + "（期望 True）");
+                Report(report, "鼠标靠近时显示解锁按钮     = " + shownWhenNear + "（期望 True）");
+                Report(report, "鼠标离开后自动隐藏         = " + hiddenWhenFar + "（期望 True）");
 
                 bool ok = hitUnlocked && !hitLocked && !transparentBefore && transparent && noActivate
-                    && toolWindow && unlockVisible && unlockClickable;
+                    && toolWindow && unlockVisible && unlockClickable && shownWhenNear && hiddenWhenFar;
                 Report(report, ok ? "LOCKCHECK OK" : "LOCKCHECK FAILED");
                 return ok ? 0 : 1;
             }

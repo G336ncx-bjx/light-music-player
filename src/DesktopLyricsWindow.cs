@@ -39,6 +39,7 @@ namespace LightMusic
         private DateTime hoverStarted = DateTime.MinValue;
         private DispatcherTimer pollTimer;
         private DispatcherTimer hintTimer;
+        private DispatcherTimer unlockHideTimer;
         private LyricsUnlockWindow unlockButton;
 
         public DesktopLyricsWindow(MainWindow owner)
@@ -68,13 +69,10 @@ namespace LightMusic
 
             Configure(currentText, 34, FontWeights.SemiBold);
             Configure(translationText, 18, FontWeights.Normal);
-            Configure(nextText, 19, FontWeights.Normal);
             translationText.Margin = new Thickness(0, 2, 0, 0);
-            nextText.Margin = new Thickness(0, 8, 0, 0);
 
             panel.Children.Add(currentText);
             panel.Children.Add(translationText);
-            panel.Children.Add(nextText);
 
             // 顶部固定高度的工具栏行 + 居中歌词 + 底部等高空行，
             // 这样工具栏淡入淡出不会改变窗口大小，歌词也始终垂直居中。
@@ -129,7 +127,7 @@ namespace LightMusic
             {
                 if (pollTimer != null) pollTimer.Stop();
                 if (hintTimer != null) hintTimer.Stop();
-                HideUnlockButton();
+                DisposeUnlockButton();
             };
         }
 
@@ -211,8 +209,8 @@ namespace LightMusic
         {
             AppSettings s = main.Settings;
             currentText.FontSize = s.LyricFontSize;
-            translationText.FontSize = Math.Max(12, s.LyricFontSize * 0.55);
-            nextText.FontSize = Math.Max(12, s.LyricFontSize * 0.6);
+            // 译文/下一句的字号在 UpdateNow 里按「有没有译文」决定
+            translationText.FontSize = Math.Max(12, s.LyricFontSize * 0.6);
 
             Color color;
             try
@@ -227,7 +225,6 @@ namespace LightMusic
             brush.Freeze();
             currentText.Foreground = brush;
             translationText.Foreground = brush;
-            nextText.Foreground = brush;
             // 只让歌词文字半透明，工具栏始终清晰可见
             panel.Opacity = Math.Max(0.2, Math.Min(1, s.LyricOpacity));
 
@@ -252,9 +249,8 @@ namespace LightMusic
             if (song == null)
             {
                 currentText.Text = "未在播放";
-                translationText.Text = string.Empty;
-                nextText.Text = string.Empty;
-                translationText.Visibility = Visibility.Collapsed;
+                translationText.Text = " ";
+                translationText.Visibility = Visibility.Visible;
                 return;
             }
 
@@ -265,33 +261,38 @@ namespace LightMusic
             if (lines == null || lines.Count == 0)
             {
                 currentText.Text = song.Title;
-                translationText.Text = string.Empty;
-                translationText.Visibility = Visibility.Collapsed;
-                nextText.Text = "（暂无歌词，放一个同名 .lrc 文件即可）";
+                translationText.Text = " ";
+                translationText.Visibility = Visibility.Visible;
                 return;
             }
 
             if (index < 0)
             {
                 currentText.Text = song.Title;
-                translationText.Text = string.Empty;
-                translationText.Visibility = Visibility.Collapsed;
-                nextText.Text = lines[0].Text;
+                translationText.Text = " ";
+                translationText.Visibility = Visibility.Visible;
                 return;
             }
 
             currentText.Text = lines[index].Text;
             if (!string.IsNullOrEmpty(lines[index].Translation) && main.Settings.LyricShowTranslation)
             {
+                // 有译文：只显示这一句（原文在上、译文在下，同样大小）
                 translationText.Text = lines[index].Translation;
+                translationText.FontSize = currentText.FontSize;
+                translationText.FontWeight = currentText.FontWeight;
+                translationText.Opacity = 0.92;
                 translationText.Visibility = Visibility.Visible;
             }
             else
             {
-                translationText.Text = string.Empty;
-                translationText.Visibility = Visibility.Collapsed;
+                // 没有译文：按原来的方式显示下一句作为预览
+                translationText.Text = index + 1 < lines.Count ? lines[index + 1].Text : " ";
+                translationText.FontSize = Math.Max(12, currentText.FontSize * 0.6);
+                translationText.FontWeight = FontWeights.Normal;
+                translationText.Opacity = 0.6;
+                translationText.Visibility = Visibility.Visible;
             }
-            nextText.Text = index + 1 < lines.Count ? lines[index + 1].Text : string.Empty;
         }
 
         /// <summary>短暂提示（例如「已锁定」）。</summary>
@@ -371,6 +372,16 @@ namespace LightMusic
             bool inside = cursor.X >= rect.Left && cursor.X <= rect.Right
                        && cursor.Y >= rect.Top && cursor.Y <= rect.Bottom;
 
+            // 鼠标靠近（窗口外扩一圈）就显示解锁按钮，离开一会儿再隐藏
+            int margin = 80;
+            bool near = cursor.X >= rect.Left - margin && cursor.X <= rect.Right + margin
+                     && cursor.Y >= rect.Top - margin && cursor.Y <= rect.Bottom + margin;
+            if (locked)
+            {
+                if (near) ShowUnlockButton();
+                else ScheduleHideUnlockButton();
+            }
+
             bool onToolbar = false;
             if (inside)
             {
@@ -420,8 +431,12 @@ namespace LightMusic
             bool showToolbar = toolbarShown && !locked;
             toolbar.Opacity = showToolbar ? 1 : 0;
             toolbar.IsHitTestVisible = interactive && showToolbar;
-            if (locked) ShowUnlockButton();
-            else HideUnlockButton();
+            if (locked) PollCursor();   // 由「鼠标是否靠近」决定解锁按钮显示
+            else
+            {
+                CancelUnlockHide();
+                HideUnlockButtonSilently();
+            }
 
             bool showBackground = !locked && hovering;
             if (showBackground)
@@ -458,15 +473,47 @@ namespace LightMusic
                 unlockButton.Show();
                 unlockVisible = true;
             }
+            CancelUnlockHide();
         }
 
-        private void HideUnlockButton()
+        /// <summary>只是隐藏（保留窗口实例，避免反复创建）。</summary>
+        private void HideUnlockButtonSilently()
         {
             if (unlockButton == null) return;
             unlockButton.Hide();
+            unlockVisible = false;
+        }
+
+        private void DisposeUnlockButton()
+        {
+            CancelUnlockHide();
+            if (unlockButton == null) return;
             unlockButton.Close();
             unlockButton = null;
             unlockVisible = false;
+        }
+
+        /// <summary>鼠标离开后延迟一会儿再隐藏，避免一闪一闪。</summary>
+        private void ScheduleHideUnlockButton()
+        {
+            if (unlockButton == null || !unlockVisible) return;
+            if (unlockHideTimer == null)
+            {
+                unlockHideTimer = new DispatcherTimer();
+                unlockHideTimer.Interval = TimeSpan.FromMilliseconds(1400);
+                unlockHideTimer.Tick += delegate
+                {
+                    unlockHideTimer.Stop();
+                    if (locked) HideUnlockButtonSilently();
+                };
+            }
+            // 注意：不要每次都重启，否则每 150ms 的轮询会让它永远到不了触发时间
+            if (!unlockHideTimer.IsEnabled) unlockHideTimer.Start();
+        }
+
+        private void CancelUnlockHide()
+        {
+            if (unlockHideTimer != null) unlockHideTimer.Stop();
         }
 
         private const int GWL_EXSTYLE = -20;
