@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.2.1";
+    public static final String VERSION = "3.2.2";
 
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma" };
     private static final String[] IGNORED_EXT = { "flac", "ogg", "opus", "ape", "wv", "aif", "aiff", "mp4", "mkv", "avi", "m4v" };
@@ -1203,7 +1203,7 @@ public class MainActivity extends Activity {
         cacheSwitch.setChecked(Store.cacheAll());
         cacheSwitch.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                applyCacheMode(cacheSwitch.isChecked() ? Store.CACHE_ALL : Store.CACHE_NONE);
+                applyCacheMode(cacheSwitch.isChecked() ? Store.CACHE_ALL : Store.CACHE_WINDOW);
             }
         });
         play.addView(cacheSwitch);
@@ -1333,7 +1333,8 @@ public class MainActivity extends Activity {
             cacheModeHint.setText(caching
                     ? "已开启：听过的歌都留在本机，可以离线播放；占的空间会随听过的歌增加，"
                             + "随时可以点「清除缓存」清掉。"
-                    : "默认关闭：播放时只在内存里缓冲，硬盘上不留音频文件，每次听歌都要联网。");
+                    : "默认关闭：本机只留正在听的那一首和下一首（切歌几乎不用等），"
+                            + "更早的会自动删掉，占的空间很小。");
         }
     }
 

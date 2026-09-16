@@ -338,6 +338,10 @@ namespace Skylark
         [DataMember(Name = "cloudCacheMode", Order = 40)]
         public int CloudCacheModeValue { get; set; }
 
+        /// <summary>软件内歌词页的字号（12–40，默认 16）。</summary>
+        [DataMember(Name = "lyricPageSize", Order = 41)]
+        public double LyricPageFontSize { get; set; }
+
         /// <summary>本地占用策略（对外用这个）。</summary>
         public int CloudCacheMode
         {
@@ -357,6 +361,7 @@ namespace Skylark
             SortFieldValue = (int)SortField.Default;
             SortAscending = true;
             LyricFontSize = 34;
+            LyricPageFontSize = 16;
             LyricColor = "#FFFFFF";
             LyricOpacity = 1.0;
             LyricShowTranslation = true;

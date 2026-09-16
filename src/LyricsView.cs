@@ -19,6 +19,17 @@ namespace Skylark
         private readonly List<FrameworkElement> lineElements = new List<FrameworkElement>();
         private readonly List<TextBlock> lineTexts = new List<TextBlock>();
 
+        /// <summary>歌词页字号（设置里可调）。</summary>
+        private double PageFontSize
+        {
+            get
+            {
+                double size = main == null ? 16 : main.Settings.LyricPageFontSize;
+                if (size < 12 || size > 40) size = 16;
+                return size;
+            }
+        }
+
         private readonly StackPanel lyricsPanel = new StackPanel();
         private readonly ScrollViewer scroller = new ScrollViewer();
         private readonly Border topSpacer = new Border();
@@ -394,21 +405,39 @@ namespace Skylark
         public void SetActive(int index)
         {
             if (index == activeIndex) return;
+            double size = PageFontSize;
             if (activeIndex >= 0 && activeIndex < lineTexts.Count)
             {
                 lineTexts[activeIndex].FontWeight = FontWeights.Normal;
-                lineTexts[activeIndex].FontSize = 16;
+                lineTexts[activeIndex].FontSize = size;
             }
             activeIndex = index;
             if (activeIndex >= 0 && activeIndex < lineTexts.Count)
             {
                 lineTexts[activeIndex].FontWeight = FontWeights.SemiBold;
-                lineTexts[activeIndex].FontSize = 17.5;
+                lineTexts[activeIndex].FontSize = size * 1.1;
                 lineTexts[activeIndex].SetResourceReference(TextBlock.ForegroundProperty, "Text");
                 backButton.Visibility = Visibility.Collapsed;
                 ScrollToActive(true);
             }
             UpdateLineOpacities();
+        }
+
+        /// <summary>设置里改了歌词页字号后，立刻套用到已有歌词上（不用重新加载歌曲）。</summary>
+        public void ApplyFontSize()
+        {
+            double size = PageFontSize;
+            for (int i = 0; i < lineTexts.Count; i++)
+            {
+                bool active = i == activeIndex;
+                lineTexts[i].FontSize = active ? size * 1.1 : size;
+                lineTexts[i].LineHeight = Math.Round(size * 1.62);
+                if (i >= lineElements.Count) continue;
+                TextBlock translation = lineElements[i].Tag as TextBlock;
+                if (translation == null) continue;
+                translation.FontSize = size * 0.88;
+                translation.LineHeight = Math.Round(size * 1.42);
+            }
         }
 
         private void UpdateLineOpacities()
@@ -493,14 +522,16 @@ namespace Skylark
                 TextBlock text = Ui.Text(line.Text, 16, "TextDim");
                 text.TextWrapping = TextWrapping.Wrap;
                 text.TextAlignment = TextAlignment.Center;
-                text.LineHeight = 26;
+                text.FontSize = PageFontSize;
+                text.LineHeight = Math.Round(PageFontSize * 1.62);
                 item.Children.Add(text);
 
                 if (line.HasTranslation)
                 {
-                    TextBlock translation = Ui.Text(line.Translation, 14, "TextDim");
+                    TextBlock translation = Ui.Text(line.Translation, PageFontSize * 0.88, "TextDim");
                     translation.TextWrapping = TextWrapping.Wrap;
                     translation.TextAlignment = TextAlignment.Center;
+                    translation.LineHeight = Math.Round(PageFontSize * 1.42);
                     translation.Margin = new Thickness(0, 2, 0, 0);
                     item.Tag = translation;
                     item.Children.Add(translation);

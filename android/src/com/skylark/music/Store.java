@@ -15,8 +15,8 @@ import java.util.Set;
 
 /** 全局状态：音乐库、播放队列、播放模式、缓存目录。 */
 public class Store {
-    /** 本地占用策略：默认完全不落地，打开缓存才把听过的歌留在本机。 */
-    public static final int CACHE_NONE = 0;    // 只在内存里缓冲，硬盘上不留音频
+    /** 本地占用策略：默认只留两首，打开缓存才把听过的歌都留在本机。 */
+    public static final int CACHE_WINDOW = 1;  // 留「正在听的那一首 + 下一首」（默认，和电脑版一致）
     public static final int CACHE_ALL = 2;     // 听过的歌都留在本机（可离线播放）
 
     public static final List<Song> songs = new ArrayList<Song>();
@@ -24,7 +24,7 @@ public class Store {
     public static int index = -1;
     public static int mode = 1;          // 0 顺序 1 列表循环 2 单曲循环 3 随机
     public static String endpoint = "";
-    public static int cacheMode = CACHE_NONE;
+    public static int cacheMode = CACHE_WINDOW;
     public static String repoLabel = "";
     public static int skippedUnsupported = 0;
     public static boolean scanning = false;
@@ -61,9 +61,14 @@ public class Store {
         return cacheMode == CACHE_ALL;
     }
 
-    /** 是否预取下一首：只有缓存模式下才值得占本地空间。 */
+    /** 预取下一首：默认和缓存模式下都预取，切歌才不用等下载。 */
     public static boolean prefetchEnabled() {
-        return cacheAll();
+        return true;
+    }
+
+    /** 只留「正在听的那一首 + 下一首」。 */
+    public static boolean keepWindow() {
+        return cacheMode == CACHE_WINDOW;
     }
 
     public static void load(Context c) {

@@ -16,8 +16,10 @@ namespace Skylark
         private readonly TextBlock hiddenText = Ui.Text("", 12, "TextMuted");
         private readonly Slider fontSizeSlider = new Slider();
         private readonly Slider opacitySlider = new Slider();
+        private readonly Slider pageSizeSlider = new Slider();
         private readonly TextBlock fontSizeLabel = Ui.Text("", 12, "TextMuted");
         private readonly TextBlock opacityLabel = Ui.Text("", 12, "TextMuted");
+        private readonly TextBlock pageSizeLabel = Ui.Text("", 12, "TextMuted");
         private readonly CheckBox resumeCheck = new CheckBox();
         private readonly CheckBox autoPlayCheck = new CheckBox();
         private readonly CheckBox mediaKeysCheck = new CheckBox();
@@ -492,6 +494,21 @@ namespace Skylark
             StackPanel fontRow = Ui.Row(10, fontSizeSlider, fontSizeLabel);
             StackPanel opacityRow = Ui.Row(10, opacitySlider, opacityLabel);
 
+            // 软件内歌词页的字号（和桌面歌词分开调，各管各的）
+            pageSizeSlider.Style = (Style)Application.Current.Resources["FlatSlider"];
+            pageSizeSlider.Minimum = 12;
+            pageSizeSlider.Maximum = 40;
+            pageSizeSlider.Width = 260;
+            pageSizeSlider.ValueChanged += delegate
+            {
+                main.Settings.LyricPageFontSize = pageSizeSlider.Value;
+                pageSizeLabel.Text = ((int)pageSizeSlider.Value) + " px";
+                if (main.Lyrics != null) main.Lyrics.ApplyFontSize();
+                main.SaveSettingsDebounced();
+            };
+            pageSizeLabel.VerticalAlignment = VerticalAlignment.Center;
+            StackPanel pageFontRow = Ui.Row(10, pageSizeSlider, pageSizeLabel);
+
             colorRow.VerticalAlignment = VerticalAlignment.Center;
             foreach (string color in MainWindow.LyricColorPresets) colorRow.Children.Add(ColorSwatch(color));
 
@@ -527,10 +544,12 @@ namespace Skylark
 
             return Card("桌面歌词",
                 StackedRow("歌词字号", "", fontRow),
+                StackedRow("歌词页字号", "", pageFontRow),
                 StackedRow("不透明度", "", opacityRow),
                 StackedRow("歌词颜色", "", Ui.Column(0, colorRow, colorHint)),
                 checks,
-                hint);
+                hint,
+                Ui.Text("「歌词页字号」调的是软件里那个歌词页；上面的「歌词字号」调的是桌面浮窗。", 11.5, "TextMuted"));
         }
 
         private Border ColorSwatch(string color)
@@ -691,6 +710,8 @@ namespace Skylark
                 : "已找到 ffmpeg：OGG / OPUS 等格式会自动转码播放";
             fontSizeSlider.Value = s.LyricFontSize;
             fontSizeLabel.Text = ((int)s.LyricFontSize) + " px";
+            pageSizeSlider.Value = s.LyricPageFontSize;
+            pageSizeLabel.Text = ((int)s.LyricPageFontSize) + " px";
             opacitySlider.Value = s.LyricOpacity * 100;
             opacityLabel.Text = ((int)(s.LyricOpacity * 100)) + "%";
             UpdateSwatches();

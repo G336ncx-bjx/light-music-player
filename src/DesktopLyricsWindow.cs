@@ -288,9 +288,10 @@ namespace Skylark
             {
                 // 没有译文：按原来的方式显示下一句作为预览
                 translationText.Text = index + 1 < lines.Count ? lines[index + 1].Text : " ";
-                translationText.FontSize = Math.Max(12, currentText.FontSize * 0.6);
+                // 下一句要看得清：字号给到主行的 0.78，透明度也提上来
+                translationText.FontSize = Math.Max(16, currentText.FontSize * 0.78);
                 translationText.FontWeight = FontWeights.Normal;
-                translationText.Opacity = 0.6;
+                translationText.Opacity = 0.85;
                 translationText.Visibility = Visibility.Visible;
             }
         }

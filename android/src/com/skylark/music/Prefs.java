@@ -45,10 +45,10 @@ public class Prefs {
     // ---------- 缓存 ----------
 
     /** 默认不缓存：直接从云端播放，不在手机里留文件。 */
-    /** 本地占用策略：0 完全不落地（默认） / 2 听过的歌都留在本机。 */
+    /** 本地占用策略：1 只留正在听的和下一首（默认） / 2 听过的歌都留在本机。 */
     public static int cacheMode(Context c) {
-        int mode = sp(c).getInt("cacheMode", 0);
-        return mode == 2 ? 2 : 0;
+        int mode = sp(c).getInt("cacheMode", 1);
+        return mode == 2 ? 2 : 1;
     }
 
     public static void setCacheMode(Context c, int v) { sp(c).edit().putInt("cacheMode", v).apply(); }
@@ -79,6 +79,7 @@ public class Prefs {
     /** 已被移出音乐库的云盘路径，每行一个。 */
     public static String hidden(Context c) { return sp(c).getString("hidden", ""); }
     public static void setHidden(Context c, String v) { sp(c).edit().putString("hidden", v == null ? "" : v).apply(); }
+
 
     // ---------- 小表：时长、歌词偏移等按歌曲记的数值 ----------
 
