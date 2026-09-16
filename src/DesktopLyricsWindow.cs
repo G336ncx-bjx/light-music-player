@@ -140,9 +140,11 @@ namespace Skylark
             block.Foreground = Brushes.White;
             block.Effect = new DropShadowEffect
             {
-                BlurRadius = 9,
+                // 收紧成「描边」：以前 BlurRadius=9 是一团模糊光晕，
+                // 浅色字配上它会把笔画边缘吃掉，看着就又细又虚
+                BlurRadius = 3,
                 ShadowDepth = 0,
-                Opacity = 0.85,
+                Opacity = 0.95,
                 Color = Colors.Black
             };
         }
@@ -306,7 +308,8 @@ namespace Skylark
                 translationText.Text = lines[index + 1].Text;
                 // 默认和主行一样大，只靠字重与透明度区分，保证看得清
                 ApplySecondaryFontSize();
-                translationText.FontWeight = FontWeights.Normal;
+                // 字重和当前句一致：大字号下 Normal 的中文字形太细，看着像没写清楚
+                translationText.FontWeight = currentText.FontWeight;
                 translationText.Opacity = nextMode == 2 ? 0.8 : 0.85;
                 translationText.Visibility = Visibility.Visible;
             }
