@@ -1,5 +1,8 @@
 # 轻音乐 (Light Music)
 
+[![CI](https://github.com/G336ncx-bjx/light-music-player/actions/workflows/ci.yml/badge.svg)](https://github.com/G336ncx-bjx/light-music-player/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/G336ncx-bjx/light-music-player?label=release)](https://github.com/G336ncx-bjx/light-music-player/releases)
+
 一个轻量、顺手的 Windows 本地音乐播放器：**单个 exe，零依赖、零配置**，双击桌面快捷方式就能听歌。
 
 音乐与歌词都放在本地文件夹里，程序不联网、不上传、不扫描系统里的其它内容。

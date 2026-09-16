@@ -301,19 +301,12 @@ namespace LightMusic
             Directory.CreateDirectory(dir);
             Directory.CreateDirectory(Path.Combine(dir, "sub"));
 
-            string music = "D:\\Lai Siyu\\music";
-            string[] sources = Directory.Exists(music) ? Directory.GetFiles(music, "*.mp3") : new string[0];
-            if (sources.Length > 0)
-            {
-                File.Copy(sources[0], Path.Combine(dir, "测试歌曲 - 甲、乙.mp3"), true);
-                File.Copy(sources[0], Path.Combine(dir, "sub", "子目录歌曲 - 丙.mp3"), true);
-                File.WriteAllText(Path.Combine(dir, "测试歌曲 - 甲、乙.lrc"),
-                    "[00:01.00]测试歌词", new UTF8Encoding(true));
-            }
-            else
-            {
-                File.WriteAllText(Path.Combine(dir, "空文件 - 测试.mp3"), "");
-            }
+            // 扫描只看文件名与文件头，这里用内容无关的占位文件即可，保证测试不依赖本机音乐库
+            File.WriteAllText(Path.Combine(dir, "测试歌曲 - 甲、乙.mp3"), "dummy");
+            File.WriteAllText(Path.Combine(dir, "sub", "子目录歌曲 - 丙.mp3"), "dummy");
+            File.WriteAllText(Path.Combine(dir, "测试歌曲 - 甲、乙.lrc"),
+                "[00:01.00]测试歌词", new UTF8Encoding(true));
+            File.WriteAllText(Path.Combine(dir, "不是音乐.txt"), "dummy");
 
             ScanResult flat = LibraryScanner.Scan(dir, false, null, null);
             ScanResult deep = LibraryScanner.Scan(dir, true, null, null);
