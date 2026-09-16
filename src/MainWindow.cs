@@ -21,7 +21,7 @@ namespace LightMusic
     public partial class MainWindow : Window
     {
         public const string AppName = "轻音乐";
-        public const string AppVersion = "1.5.1";
+        public const string AppVersion = "1.5.0";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
