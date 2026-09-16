@@ -6,13 +6,18 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Xml;
+using Microsoft.Win32;
 
 namespace LightMusic
 {
     /// <summary>配色与样式（深色 / 浅色两套）。</summary>
     public static class Theme
     {
+        /// <summary>当前配色（实际生效的）：dark / light。</summary>
         public static string Current = "dark";
+
+        /// <summary>用户选择的模式：system / dark / light。</summary>
+        public static string Mode = "system";
 
         private static readonly string[] DarkKeys = new string[]
         {
@@ -45,7 +50,7 @@ namespace LightMusic
             if (_stylesLoaded) return;
             _stylesLoaded = true;
 
-            Apply(Current);
+            Apply(Mode);
 
             Stream stream = typeof(Theme).Assembly.GetManifestResourceStream("LightMusic.Theme.xaml");
             if (stream == null) throw new InvalidOperationException("缺少内嵌样式资源 LightMusic.Theme.xaml");
@@ -70,9 +75,11 @@ namespace LightMusic
             }
         }
 
-        public static void Apply(string name)
+        /// <summary>按模式应用主题：system 时读取系统的应用主题设置。</summary>
+        public static void Apply(string mode)
         {
-            Current = name == "light" ? "light" : "dark";
+            Mode = (mode == "light" || mode == "dark") ? mode : "system";
+            Current = Mode == "system" ? (SystemUsesLightTheme() ? "light" : "dark") : Mode;
             string[] values = Current == "light" ? LightValues : DarkValues;
             for (int i = 0; i < DarkKeys.Length; i++)
             {
@@ -86,6 +93,27 @@ namespace LightMusic
         public static void Toggle()
         {
             Apply(Current == "dark" ? "light" : "dark");
+        }
+
+        /// <summary>读取系统「应用模式」：浅色返回 true。</summary>
+        public static bool SystemUsesLightTheme()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                {
+                    if (key != null)
+                    {
+                        object value = key.GetValue("AppsUseLightTheme");
+                        if (value != null) return Convert.ToInt32(value) != 0;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return false;
         }
 
         private static Color ParseColor(string hex)

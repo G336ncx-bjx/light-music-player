@@ -331,18 +331,33 @@
     <Style x:Key="SliderDot" TargetType="Thumb">
         <Setter Property="Focusable" Value="False" />
         <Setter Property="IsTabStop" Value="False" />
-        <Setter Property="Width" Value="12" />
-        <Setter Property="Height" Value="12" />
+        <Setter Property="Width" Value="16" />
+        <Setter Property="Height" Value="16" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Grid Background="Transparent" Width="20" Height="20">
-                        <Ellipse x:Name="dot" Fill="{DynamicResource Accent}" Width="12" Height="12" />
+                    <Grid Background="Transparent">
+                        <Ellipse x:Name="dot" Fill="{DynamicResource Accent}" Width="14" Height="14"
+                                 RenderTransformOrigin="0.5,0.5">
+                            <Ellipse.RenderTransform>
+                                <ScaleTransform ScaleX="1" ScaleY="1" />
+                            </Ellipse.RenderTransform>
+                        </Ellipse>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="dot" Property="Width" Value="16" />
-                            <Setter TargetName="dot" Property="Height" Value="16" />
+                            <Setter TargetName="dot" Property="RenderTransform">
+                                <Setter.Value>
+                                    <ScaleTransform ScaleX="1.18" ScaleY="1.18" />
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="dot" Property="RenderTransform">
+                                <Setter.Value>
+                                    <ScaleTransform ScaleX="1.18" ScaleY="1.18" />
+                                </Setter.Value>
+                            </Setter>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -467,6 +482,21 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="18" />
+    </Style>
+
+    <!-- 列表行内的小操作按钮（＋ 加入队列 / ✕ 移除） -->
+    <Style x:Key="RowAction" TargetType="Border">
+        <Setter Property="Width" Value="26" />
+        <Setter Property="Height" Value="26" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="ToolTipService.InitialShowDelay" Value="400" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Hover}" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="ToolTip">

@@ -282,6 +282,7 @@ namespace LightMusic
         [DataMember(Name = "closeToTray", Order = 27)]
         public bool CloseToTray { get; set; }
 
+        /// <summary>主题模式：system（跟随系统，默认）/ dark / light</summary>
         [DataMember(Name = "theme", Order = 28)]
         public string Theme { get; set; }
 
@@ -320,7 +321,7 @@ namespace LightMusic
             WindowHeight = 740;
             WindowX = Unset;
             WindowY = Unset;
-            Theme = "dark";
+            Theme = "system";
             Queue = new List<string>();
             Hidden = new List<string>();
             Durations = new List<DurationEntry>();

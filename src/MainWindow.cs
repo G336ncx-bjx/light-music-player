@@ -71,7 +71,7 @@ namespace LightMusic
         public MainWindow()
         {
             settings = SettingsStore.Load();
-            Theme.Current = settings.Theme;
+            Theme.Apply(settings.Theme);
             Theme.EnsureStyles();
 
             Title = AppName;
@@ -455,7 +455,18 @@ namespace LightMusic
         public void ToggleTheme()
         {
             Theme.Toggle();
-            settings.Theme = Theme.Current;
+            settings.Theme = Theme.Mode;
+            Background = (Brush)Application.Current.Resources["Window"];
+            ApplyDarkTitleBar();
+            SaveSettings();
+            Raise(SettingsChanged);
+        }
+
+        /// <summary>设置主题模式：system / dark / light。</summary>
+        public void SetThemeMode(string mode)
+        {
+            Theme.Apply(mode);
+            settings.Theme = Theme.Mode;
             Background = (Brush)Application.Current.Resources["Window"];
             ApplyDarkTitleBar();
             SaveSettings();
@@ -1611,6 +1622,7 @@ namespace LightMusic
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
         private const int WM_HOTKEY = 0x0312;
+        private const int WM_SETTINGCHANGE = 0x001A;
         private const int HotkeyPlay = 1;
         private const int HotkeyPrev = 2;
         private const int HotkeyNext = 3;
@@ -1635,6 +1647,17 @@ namespace LightMusic
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
+            if (msg == WM_SETTINGCHANGE && Theme.Mode == "system")
+            {
+                string before = Theme.Current;
+                Theme.Apply("system");
+                if (Theme.Current != before)
+                {
+                    Background = (Brush)Application.Current.Resources["Window"];
+                    ApplyDarkTitleBar();
+                    Raise(SettingsChanged);
+                }
+            }
             if (msg == WM_HOTKEY)
             {
                 int id = wParam.ToInt32();
