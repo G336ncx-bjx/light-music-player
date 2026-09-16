@@ -3,9 +3,14 @@
 [![CI](https://github.com/G336ncx-bjx/skylark-music/actions/workflows/ci.yml/badge.svg)](https://github.com/G336ncx-bjx/skylark-music/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/G336ncx-bjx/skylark-music?label=release)](https://github.com/G336ncx-bjx/skylark-music/releases)
 
-一个轻量、顺手的 **云端音乐播放器**：**单个 exe、零依赖**，双击桌面快捷方式就能听歌。
+一个轻量、顺手的 **云端音乐播放器**，Windows 与 Android 共用同一个云盘曲库：
 
-音乐与歌词放在你自己的**云盘分享文件夹**里（默认按清华云盘 / Seafile 分享链接读取），
+| 平台 | 程序 | 体积 | 说明 |
+| --- | --- | --- | --- |
+| Windows 10 / 11 | `Skylark.exe` | 约 300 KB | 单文件、零依赖，双击桌面快捷方式就能听；带桌面歌词（可锁定为鼠标穿透） |
+| Android 5.0 及以上 | `Skylark-android.apk` | 约 150 KB | 直接装 APK，不用应用商店；音乐库 / 队列 / 歌词 / 设置四个页面 |
+
+音乐与歌词放在你自己的**云盘分享文件夹**里（清华云盘 / Seafile 的分享链接，或资料库 API 令牌），
 播放时自动下载到本地缓存，下次播放同一首就是本地播放；程序不上传任何数据、不扫描系统里的其它内容。
 
 ![音乐库](docs/screenshots/library-dark.png)
@@ -14,20 +19,25 @@
 
 不想自己编译的话，直接到 [Releases](https://github.com/G336ncx-bjx/skylark-music/releases) 下载：
 
-- `Skylark.exe`：单文件绿色版，下载后双击即可运行（Windows 10 / 11）。
+- `Skylark.exe`：Windows 单文件绿色版，下载后双击即可运行（Windows 10 / 11）。
+- `Skylark-android.apk`：Android 安装包，手机上点开安装即可（Android 5.0 及以上）。
 - `Skylark-win-x64.zip`：exe + 使用说明的压缩包。
 
 下载后如果想让桌面有个快捷方式，运行 `scripts\install.ps1`（或手动给 exe 发送快捷方式到桌面）即可。
 
-### 第一次运行提示「未知发布者」怎么办？
+### 第一次运行提示「未知发布者」/「未知来源」怎么办？
 
-这是**正常现象**：`Skylark.exe` 没有购买代码签名证书，Windows 对任何未签名的程序都会提示一次，
-不是文件有问题。处理方式：
+这是**正常现象**：`Skylark.exe` 与 `Skylark-android.apk` 都没有购买代码签名证书，
+Windows 和 Android 对未签名的程序都会提示一次，不是文件有问题。处理方式：
 
-1. 点提示框里的「**更多信息**」，再点「**仍要运行**」即可；
-2. 想更放心的话，可以对照 Release 里的 `SHA256SUMS.txt` 校验你下载到的 exe（或在 PowerShell 里
+1. Windows：点提示框里的「**更多信息**」，再点「**仍要运行**」；
+2. Android：点「**允许安装未知应用**」→「**仍要安装**」（各家 ROM 的措辞略有差别，意思一样）；
+3. 想更放心的话，可以对照 Release 里的 `SHA256SUMS.txt` 校验你下载到的文件（或在 PowerShell 里
    `Get-FileHash .\Skylark.exe -Algorithm SHA256` 比对）；
-3. 最稳妥的是自己构建：源码是纯 C#，用系统自带编译器，`build.ps1` 一条命令就能编出同样的 exe。
+4. 最稳妥的是自己构建：Windows 端是纯 C#，用系统自带编译器 `build.ps1` 一条命令就能编出同样的 exe；
+   Android 端 `android\build.ps1` 也一样，只需要 JDK + Android SDK，**不需要 Gradle**。
+
+签名是固定的（Android 用仓库里的 `android/skylark.jks`），所以后续版本可以直接覆盖安装、不会要求先卸载。
 
 另外，程序只访问你在设置里填写的那个云盘地址，不向任何其它服务器发送数据；
 如果你看到杀毒软件提示联网，那是因为它在读取你的云盘（播放/缓存/上传/删除都走这个地址）。
@@ -134,6 +144,44 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start
 | `Ctrl + Alt + D` | 显示 / 隐藏桌面歌词（全局） |
 | 多媒体键 | 播放 / 暂停、上一首、下一首（全局，可在设置里关闭） |
 
+## Android 版
+
+手机上不显示桌面歌词（用不上），其它功能与 Windows 版对齐，并且共用同一个云盘曲库：
+
+| 页面 | 能做什么 |
+| --- | --- |
+| **音乐库** | 搜索歌名 / 歌手；顶部四个按钮：播放全部、随机播放、排序（歌名 / 歌手 / 时长 / 云盘顺序）、刷新；右下角「上传」可选择多个文件传到云盘。**点歌名 = 立刻播放并加入播放队列**（已在队列里不会重复添加），长按有「下一首播放 / 加到队列末尾 / 从音乐库移除 / 从云盘删除」 |
+| **队列** | 队列就是播放顺序，点哪首播哪首；长按可移除、上移、下移、设为下一首；右上角一键清空。**队列与播放位置会保留到下次打开**，不用每次重新点 |
+| **歌词** | 逐行高亮 + 自动居中滚动，点任意一行跳到那一句；`−0.5 秒 / +0.5 秒` 微调偏移（每首歌单独记住）；外语歌的译文显示在原文下面 |
+| **设置** | 分享链接 / API 令牌（带「粘贴」按钮）、测试连接、缓存开关与占用统计、清除缓存、主题（**默认跟随系统**，也可固定浅色 / 深色）、恢复已隐藏的歌曲、关于 |
+
+- **播放控制**：底部播放条有进度拖动、上一首 / 播放暂停 / 下一首、播放模式（顺序 / 列表循环 / 单曲循环 / 随机）；
+  切到别的 App 或锁屏后也能继续播，通知栏、锁屏与耳机按键都能控制。
+- **从别的 App 分享上传**：在文件管理器或其它 App 里选「分享」→ 云雀，选中的音频会直接上传到云盘。
+- **缓存**：听过的歌缓存在应用私有目录，可以在设置里看到占用并清理，也可以关掉缓存（每次都走网络）。
+- **深色 / 浅色**：默认跟随系统，系统切换深浅色时界面会自动跟着变。
+
+安装与使用：下载 `Skylark-android.apk` → 手机上点开安装（允许「未知来源」）→
+首次打开会自动跳到「设置」，填入分享链接或 API 令牌 → 回到「音乐库」即可看到云端全部歌曲，
+与 Windows 版填的是同一个地址。
+
+### 签名密钥（覆盖升级的前提）
+
+Android 要求同一个包名的后续版本必须用**同一个密钥**签名才能直接覆盖安装，所以密钥不能丢，也不能进公开仓库：
+
+- 本机：第一次跑 `android\build.ps1` 时如果 `android\skylark.jks` 不存在，会自动生成一个，
+  口令写在 `android\keystore.pass`；这两个文件都在 `.gitignore` 里，**请自己备份**。
+- CI / Release：从仓库 Secrets 读取 `ANDROID_KEYSTORE_BASE64`（密钥文件的 base64）与
+  `ANDROID_KEYSTORE_PASS`（口令），这样发布出去的 APK 和你本机编的签名一致，可以互相覆盖安装。
+
+```powershell
+# 把本机密钥与口令写进 GitHub Secrets（只需做一次；密钥不会出现在仓库里）
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("android\skylark.jks")) |
+    gh secret set ANDROID_KEYSTORE_BASE64 --repo G336ncx-bjx/skylark-music
+Get-Content android\keystore.pass |
+    gh secret set ANDROID_KEYSTORE_PASS --repo G336ncx-bjx/skylark-music
+```
+
 ## 界面
 
 | 歌词页 | 播放队列 |
@@ -153,6 +201,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Start
 ```
 build.ps1                    构建脚本（调用系统自带 csc.exe，把 XAML 作为资源内嵌进 exe）
 scripts/make-icon.ps1        生成多尺寸应用图标（纯 System.Drawing 绘制）
+scripts/make-android-icon.ps1 生成 Android 图标（圆角方形 + 自适应图标前景）
 scripts/install.ps1          构建 + 创建桌面 / 开始菜单快捷方式
 src/Program.cs               入口：单实例、自检与截图模式
 src/MainWindow.cs            主窗口：外壳、播放调度、托盘、全局热键、设置持久化
@@ -167,6 +216,12 @@ src/Models.cs                数据模型与设置项
 src/Theme.cs                 配色、矢量图标、控件工厂
 src/Resources/theme.xaml     控件样式（按钮 / 列表 / 滚动条 / 滑块 / 菜单…）
 src/Resources/templates.xaml 列表行数据模板
+android/build.ps1            Android 构建脚本（aapt2 → javac → d8 → zipalign → apksigner，不用 Gradle）
+android/AndroidManifest.xml  Android 清单（权限、前台播放服务、分享上传入口）
+android/src/…                Android 端源码（界面 / 前台播放服务 / 云盘 / 歌词 / 设置）
+android/res/…                图标、矢量播放按钮、字符串
+android/tools/SelfTest.java  纯 Java 逻辑自检（歌词、文件名、时长解析）
+android/build.ps1 同目录的 skylark.jks / keystore.pass  本机签名密钥与口令（不入库，见「签名密钥」一节）
 ```
 
 ### 一些实现细节
@@ -176,6 +231,16 @@ src/Resources/templates.xaml 列表行数据模板
 - **歌词解析**：自动识别 UTF-8 / UTF-16 / GBK，支持一行多时间戳、`offset` 偏移与翻译行。
 - **播放进度**：MediaPlayer 的位置更新较粗糙，这里用锚点 + 秒表插值，让进度条与歌词滚动更平滑。
 - **配置位置**：`%APPDATA%\Skylark\settings.json`（该目录不可写时自动退回 exe 同级 `data` 目录）。
+
+Android 端的实现路线也是「不用第三方库」：
+
+- **零依赖**：只用 Android 系统自带的 API（`MediaPlayer` + 前台服务 + `MediaSession`），
+  APK 里只有一个 `classes.dex`（约 100 KB），没有 Gradle、没有 AndroidX、没有原生 .so；
+- **构建**：`aapt2` 编译资源 → `javac` 编译 → `d8` 生成 dex → `zipalign` 对齐 → `apksigner` 签名；
+- **歌词 / 时长解析**：与 Windows 版同一套逻辑（LRC 偏移、多时间戳、翻译行；MP3 帧头算时长），
+  由 `android/tools/SelfTest.java` 在构建前跑一遍纯 Java 自检；
+- **中文路径**：`aapt2` / `zipalign` 是原生程序，读不了中文目录，所以构建脚本在 `%TEMP%` 里编译、
+  最后把 APK 复制回 `dist`。
 
 ### 开发用命令
 
@@ -197,6 +262,9 @@ dist\Skylark.exe --uploadall <令牌或分享链接> "D:\某个文件夹"
 
 # 整库校验：逐首拉文件头解析时长 + 统计歌词覆盖率
 dist\Skylark.exe --cloudtest <令牌或分享链接>
+
+# Android：构建 APK（先跑一遍纯 Java 逻辑自检，再用 aapt2/javac/d8 编译打包签名）
+powershell -ExecutionPolicy Bypass -File android\build.ps1
 ```
 
 ## 许可证
