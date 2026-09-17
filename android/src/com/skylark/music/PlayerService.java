@@ -633,6 +633,8 @@ public class PlayerService extends Service {
             if (keep.contains(name)) continue;
             f.delete();
         }
+        // 歌词缓存跟着同一套策略走：默认只留正在听的和下一首
+        Store.pruneLyricCache(this);
     }
 
     /** 设置里换本地占用策略后，立刻按新策略清一遍。 */

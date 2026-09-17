@@ -122,14 +122,79 @@ public class Store {
         return new File(dir, name + "." + hash(song.cloudPath) + ext);
     }
 
-    /** 歌词缓存文件。 */
-    public static File lyricCacheFile(Context c, Song song) {
+    /** 歌词缓存目录。 */
+    public static File lyricCacheDir(Context c) {
         File dir = new File(cacheDir(c), "lyrics");
         if (!dir.exists()) dir.mkdirs();
-        // 前缀 l4-：云端歌词重排过（原文在上、译文在下、时间戳相同），
-        // 解析器修了「标题行/全角空格占位把整首错开一行」，
-        // 个别歌曲的时间轴也按实际音频校正过，老缓存一律作废重取。
-        return new File(dir, "l4-" + hash(song.cloudPath) + ".lrc");
+        return dir;
+    }
+
+    private static final String LYRIC_PREFIX = "l5";
+
+    /** 歌词缓存文件。 */
+    public static File lyricCacheFile(Context c, Song song) {
+        // 文件名 = 前缀-歌曲哈希-修改时间哈希：带上云盘上歌词文件的修改时间，
+        // 云端歌词一改名字就变了，会自动重新下载；歌曲哈希在前，方便按歌曲清理旧版本。
+        String stamp = song.lyricModified == null ? "" : song.lyricModified;
+        return new File(lyricCacheDir(c),
+                LYRIC_PREFIX + "-" + hash(song.cloudPath) + "-" + hash(stamp) + ".lrc");
+    }
+
+    /**
+     * 清理歌词缓存，和音频用同一套策略：
+     *   - 关着缓存开关（默认）：只留正在听的那一首和下一首的歌词，其它全删；
+     *   - 开了「听过的歌都留在本机」：都留着，但每首歌只留最新一版。
+     * 顺便把换过前缀的老缓存（l1-…l4-）清掉。
+     */
+    public static void pruneLyricCache(Context c) {
+        File dir = lyricCacheDir(c);
+        File[] files = dir.listFiles();
+        if (files == null) return;
+
+        // 换过前缀的老缓存（l1-…l4-）一次清掉
+        String[] oldPrefixes = { "l1-", "l2-", "l3-", "l4-" };
+        for (int i = 0; i < files.length; i++) {
+            File f = files[i];
+            if (f.isDirectory()) continue;
+            String name = f.getName();
+            for (int k = 0; k < oldPrefixes.length; k++) {
+                if (name.startsWith(oldPrefixes[k])) { f.delete(); break; }
+            }
+        }
+
+        // 该留的文件：正在听的那一首 + 下一首
+        Set<String> keep = new HashSet<String>();
+        List<String> songHashes = new ArrayList<String>();
+        Song current = current();
+        if (current != null) {
+            keep.add(lyricCacheFile(c, current).getName());
+            songHashes.add(hash(current.cloudPath));
+        }
+        if (index >= 0 && index + 1 < queue.size()) {
+            Song next = queue.get(index + 1);
+            if (next != null) {
+                keep.add(lyricCacheFile(c, next).getName());
+                songHashes.add(hash(next.cloudPath));
+            }
+        }
+
+        boolean cacheEverything = cacheAll();
+        files = dir.listFiles();
+        if (files == null) return;
+        for (int i = 0; i < files.length; i++) {
+            File f = files[i];
+            if (f.isDirectory()) continue;
+            String name = f.getName();
+            if (keep.contains(name)) continue;
+            if (cacheEverything) {
+                // 开了「听过的歌都留在本机」：别的歌都留着，只删同一首歌的旧版本
+                for (int k = 0; k < songHashes.size(); k++) {
+                    if (name.startsWith(LYRIC_PREFIX + "-" + songHashes.get(k) + "-")) { f.delete(); break; }
+                }
+                continue;
+            }
+            f.delete();
+        }
     }
 
     // ---------- 按歌曲记的小数据：时长、歌词偏移 ----------

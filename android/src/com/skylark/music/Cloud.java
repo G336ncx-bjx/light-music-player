@@ -22,6 +22,7 @@ public class Cloud {
         public String name;
         public String path;   // 以 / 开头
         public long size;
+        public String modified = "";   // 云盘上的修改时间，用来判断歌词有没有更新
         public boolean dir;
     }
 
@@ -122,6 +123,7 @@ public class Cloud {
             if (!parent.endsWith("/")) parent = parent + "/";
             e.path = parent + e.name;
             e.size = o.optLong("size");
+            e.modified = o.optString("mtime");
             e.dir = "dir".equalsIgnoreCase(o.optString("type"));
             out.add(e);
         }
@@ -148,6 +150,7 @@ public class Cloud {
                     e.name = o.optString("file_name");
                     e.path = o.optString("file_path", "/" + e.name);
                     e.size = o.optLong("size");
+                    e.modified = o.optString("last_modified");
                     e.dir = o.optBoolean("is_dir");
                     if (e.dir) {
                         String p = e.path.startsWith("/") ? e.path.substring(1) : e.path;

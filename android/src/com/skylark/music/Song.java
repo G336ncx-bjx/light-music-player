@@ -12,6 +12,7 @@ public class Song {
     public long size;
     public double duration;    // 秒，0 表示未知
     public String lyricPath;   // 同名 .lrc 的云盘路径（可能为空）
+    public String lyricModified;   // 云盘上歌词文件的修改时间（用来让旧缓存自动失效）
     public String lyricText;   // 歌词文本（取回后缓存）
     public String localFile;   // 已缓存到本地的完整路径（可能为空）
 
@@ -39,6 +40,7 @@ public class Song {
             o.put("s", size);
             o.put("d", duration);
             o.put("l", lyricPath == null ? "" : lyricPath);
+            o.put("lm", lyricModified == null ? "" : lyricModified);
         } catch (JSONException e) {
             // 忽略：字段都是简单类型
         }
@@ -54,6 +56,7 @@ public class Song {
         s.size = o.optLong("s");
         s.duration = o.optDouble("d", 0);
         s.lyricPath = o.optString("l");
+        s.lyricModified = o.optString("lm");
         return s;
     }
 }

@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.6";
+    public static final String VERSION = "3.3.7";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -1014,6 +1014,8 @@ public class MainActivity extends Activity {
                 try {
                     final String text = Cloud.downloadText(endpoint, song.lyricPath);
                     writeFile(Store.lyricCacheFile(MainActivity.this, song), text);
+                    // 歌词也和音频一样：默认只留正在听的和下一首
+                    Store.pruneLyricCache(MainActivity.this);
                     ui.post(new Runnable() {
                         public void run() {
                             lyricPendingPath = "";
@@ -1491,12 +1493,14 @@ public class MainActivity extends Activity {
                     List<Cloud.Entry> entries = Cloud.listAll(endpoint);
                     final List<Song> found = new ArrayList<Song>();
                     Map<String, String> lyrics = new HashMap<String, String>();
+                    Map<String, String> lyricStamps = new HashMap<String, String>();
                     for (int i = 0; i < entries.size(); i++) {
                         Cloud.Entry entry = entries.get(i);
                         if (entry.dir) continue;
                         String ext = extOf(entry.name);
                         if ("lrc".equals(ext)) {
                             lyrics.put(baseOf(entry.name).toLowerCase(Locale.ROOT), entry.path);
+                            lyricStamps.put(baseOf(entry.name).toLowerCase(Locale.ROOT), entry.modified);
                         }
                     }
                     int skipped = 0;
@@ -1520,6 +1524,8 @@ public class MainActivity extends Activity {
                         song.size = entry.size;
                         String lyric = lyrics.get(baseOf(entry.name).toLowerCase(Locale.ROOT));
                         song.lyricPath = lyric == null ? "" : lyric;
+                        String stamp = lyricStamps.get(baseOf(entry.name).toLowerCase(Locale.ROOT));
+                        song.lyricModified = stamp == null ? "" : stamp;
                         song.duration = Store.durationOf(MainActivity.this, song);
                         found.add(song);
                     }
