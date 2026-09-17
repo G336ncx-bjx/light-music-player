@@ -24,11 +24,11 @@ import java.util.regex.Pattern;
 public class Update {
 
     /**
-     * 更新专用仓库（云盘里名字叫 apk 的那个资料库）的 API 令牌。
-     * 它只对这个仓库有权限，和歌曲库无关；即使有人拿到它往仓库里塞别的包，
-     * Android 也会因为签名不同拒绝安装，装不上来。
+     * 更新专用仓库（云盘里名字叫 apk 的那个资料库）的**只读** API 令牌。
+     * App 只需要列目录和下载，用只读令牌就够，泄露了也改不了仓库里的东西。
+     * （发版时往仓库里传包的读写令牌只在开发侧使用，不放进 APK。）
      */
-    public static final String UPDATE_ENDPOINT = "ee8dab6377ad2ff15f871e45dc4b6500c003b49b";
+    public static final String UPDATE_ENDPOINT = "0cd63a9c3cce653a6176441ea9b7a8a2d8fdd411";
 
     /** 云盘上更新包的名字：Skylark-android-3.3.8.apk */
     private static final Pattern NAME =
@@ -126,6 +126,33 @@ public class Update {
         intent.setClipData(ClipData.newRawUri("update.apk", uri));
         if (!(c instanceof Activity)) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         c.startActivity(intent);
+    }
+
+    /**
+     * 安装前的自检：下载下来的包必须
+     *   1) 版本号和仓库里标的一致；
+     *   2) 签名和当前装着的 App 完全相同。
+     * 任一条不满足就扔掉，不去惊动系统安装器 —— 这样即使更新仓库的只读令牌公开、
+     * 有人往里塞了改过的包，也装不上。
+     */
+    public static boolean verify(Context c, File apk, String expectedVersion) {
+        try {
+            PackageManager pm = c.getPackageManager();
+            PackageInfo archive = pm.getPackageArchiveInfo(apk.getAbsolutePath(),
+                    PackageManager.GET_SIGNATURES);
+            if (archive == null) return false;
+            if (expectedVersion != null && expectedVersion.length() > 0
+                    && !expectedVersion.equals(archive.versionName)) return false;
+            PackageInfo self = pm.getPackageInfo(c.getPackageName(), PackageManager.GET_SIGNATURES);
+            if (archive.signatures == null || self.signatures == null) return false;
+            if (archive.signatures.length != self.signatures.length) return false;
+            for (int i = 0; i < archive.signatures.length; i++) {
+                if (!archive.signatures[i].equals(self.signatures[i])) return false;
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** Android 8 起要用户允许「安装未知应用」；没有权限时给个提示并引导过去。 */

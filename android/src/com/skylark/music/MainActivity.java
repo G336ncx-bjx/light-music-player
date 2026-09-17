@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.11";
+    public static final String VERSION = "3.3.12";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -1329,7 +1329,7 @@ public class MainActivity extends Activity {
         about.addView(updateRow);
         about.addView(hint("点「检查更新」才会联网（平时不会自己检查）。发现新版本后"
                 + "在应用里直接下载安装（更新包放在云盘上专门的 apk 仓库里），"
-                + "装完会自动删掉安装包。"));
+                + "装完会自动删掉安装包；下载下来的包会先校验版本和签名，不符就直接丢弃。"));
         box.addView(about);
 
         return scroll;
@@ -1583,6 +1583,12 @@ public class MainActivity extends Activity {
                     ui.post(new Runnable() {
                         public void run() {
                             dialog.dismiss();
+                            if (!Update.verify(MainActivity.this, target, found.version)) {
+                                if (target.exists()) target.delete();
+                                updateStatus.setText("安装包校验没通过，已删除");
+                                toast("安装包校验没通过（版本或签名不符），已删除");
+                                return;
+                            }
                             toast("下载完成，请在系统提示里确认安装");
                             Update.install(MainActivity.this, target);
                         }
