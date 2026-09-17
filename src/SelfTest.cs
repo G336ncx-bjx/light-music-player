@@ -132,6 +132,59 @@ namespace Skylark
             }
             Check("歌词：日文歌不会把中文译文当原文", jpOk, jpDetail);
 
+            // 《summertime》：标题是英文、歌词是日文，文件开头还有「歌名 - 歌手」行和全角空格占位行。
+            // 以前这两行会被当成「原文」，整首歌错开一行（表现为「上一句译文配下一句原文」）。
+            LyricDocument mixedTitle = LrcParser.Parse(
+                "[ml:1.0]\n[ti:summertime]\n[ar:cinnamons]\n" +
+                "[00:00.00]summertime - cinnamons\n" +
+                "[00:01.11]　\n" +
+                "[00:01.38]君の虜になってしまえばきっと\n" +
+                "[00:01.38]如果能成为你的俘虏\n" +
+                "[00:05.46]この夏は充実するのもっと\n" +
+                "[00:05.46]这个夏天一定会更加充实\n");
+            bool mixedOk = mixedTitle.Lines.Count == 2
+                && mixedTitle.Lines[0].Text == "君の虜になってしまえばきっと"
+                && mixedTitle.Lines[0].Translation == "如果能成为你的俘虏"
+                && mixedTitle.Lines[1].Text == "この夏は充実するのもっと"
+                && mixedTitle.Lines[1].Translation == "这个夏天一定会更加充实";
+            string mixedDetail = "";
+            foreach (LyricLine line in mixedTitle.Lines)
+                mixedDetail += "[" + line.Text + "|" + line.Translation + "]";
+            Check("歌词：英文标题的日文歌 + 标题行/空行不占位", mixedOk, mixedDetail);
+
+            // 标准排版里「磊々落々反戦国家」这种纯汉字日文原句，不能因为「没假名」被当成译文
+            LyricDocument kanji = LrcParser.Parse(
+                "[ti:千本桜 (千本樱)]\n[ar:初音ミク (初音未来)]\n" +
+                "[00:00.00]千本桜 (千本樱) - 初音ミク (初音未来)\n" +
+                "[00:32.11]大胆不敵にハイカラ革命\n[00:32.11]英勇无畏 维新革命\n" +
+                "[00:34.98]磊々落々反戦国家\n[00:34.98]光明磊落反战国家\n");
+            bool kanjiOk = kanji.Lines.Count == 2
+                && kanji.Lines[0].Translation == "英勇无畏 维新革命"
+                && kanji.Lines[1].Text == "磊々落々反戦国家"
+                && kanji.Lines[1].Translation == "光明磊落反战国家";
+            string kanjiDetail = "";
+            foreach (LyricLine line in kanji.Lines)
+                kanjiDetail += "[" + line.Text + "|" + line.Translation + "]";
+            Check("歌词：纯汉字日文原句仍算原文", kanjiOk, kanjiDetail);
+
+            // 旧排版（译文时间戳被标成下一句）里碰上纯汉字原句
+            LyricDocument kanjiShifted = LrcParser.Parse(
+                "[ti:インドア系ならトラックメイカー (内向都是作曲家)]\n" +
+                "[00:41.69]納期は明日だ\n[00:42.68]交稿期限是明天\n" +
+                "[00:42.68]絶対徹夜\n[00:43.59]绝对要熬夜了\n" +
+                "[00:43.59]エビデイ\n[00:44.04]Every day\n");
+            bool kanjiShiftedOk = kanjiShifted.Lines.Count == 3
+                && kanjiShifted.Lines[0].Text == "納期は明日だ"
+                && kanjiShifted.Lines[0].Translation == "交稿期限是明天"
+                && kanjiShifted.Lines[1].Text == "絶対徹夜"
+                && kanjiShifted.Lines[1].Translation == "绝对要熬夜了"
+                && kanjiShifted.Lines[2].Text == "エビデイ"
+                && kanjiShifted.Lines[2].Translation == "Every day";
+            string shiftedKanjiDetail = "";
+            foreach (LyricLine line in kanjiShifted.Lines)
+                shiftedKanjiDetail += "[" + line.Text + "|" + line.Translation + "]";
+            Check("歌词：旧排版里的纯汉字原句", kanjiShiftedOk, shiftedKanjiDetail);
+
             LyricDocument plain = LrcParser.Parse("第一行\n第二行\n");
             Check("歌词：纯文本歌词", !plain.Synced && plain.Lines.Count == 2, plain.Lines.Count + " 行");
 

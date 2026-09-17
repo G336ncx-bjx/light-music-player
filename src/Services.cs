@@ -300,6 +300,7 @@ namespace Skylark
             bool synced = false;
             double offset = 0;
             string titleTag = null;
+            string artistTag = null;
 
             for (int i = 0; i < rawLines.Length; i++)
             {
@@ -330,6 +331,10 @@ namespace Skylark
                     {
                         titleTag = tag.Substring(3).Trim();
                     }
+                    else if (tag.StartsWith("ar:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        artistTag = tag.Substring(3).Trim();
+                    }
                     pos = end + 1;
                 }
 
@@ -358,7 +363,7 @@ namespace Skylark
             if (synced)
             {
                 // 按文件顺序把译文并到它自己的原文上（细节见 MergeTranslations）
-                lines = MergeTranslations(lines, titleTag);
+                lines = MergeTranslations(lines, titleTag, artistTag);
                 // 稳定排序：同一时间戳保持原有先后顺序
                 lines = new List<LyricLine>(lines.OrderBy(delegate(LyricLine line) { return line.Time; }));
             }
@@ -436,8 +441,13 @@ namespace Skylark
         ///
         /// 判断哪一行是译文：用 [ti:标题] 的语言（其次看第一行、最后看多数派），细节见 PickOriginalLanguage。
         /// </summary>
-        private static List<LyricLine> MergeTranslations(List<LyricLine> lines, string titleTag)
+        private static List<LyricLine> MergeTranslations(List<LyricLine> lines, string titleTag, string artistTag)
         {
+            if (lines.Count == 0) return lines;
+
+            // 网易云导出的 lrc 第一行常常是「歌名 - 歌手」这种自动生成的行，它不是歌词。
+            // 以前它会被当成「原文」，把真正的第一句歌词当成译文吃掉，整首歌就错开一行。
+            if (IsAutoTitleLine(lines[0].Text, titleTag, artistTag)) lines.RemoveAt(0);
             if (lines.Count == 0) return lines;
 
             int zh = 0, ja = 0, latin = 0;
@@ -460,6 +470,11 @@ namespace Skylark
             if (firstLyric == null) firstLyric = lines[0].Text;
             string original = PickOriginalLanguage(titleTag, ScriptOf(firstLyric),
                 zh, ja, latin, lines.Count);
+
+            // 标准排版（原文在上、译文在下、两者时间戳相同）就按时间戳分组配对：
+            // 组内第一行一定是原文。这样连「絶対徹夜」这种纯汉字日文原句也不会被当成译文。
+            if (PrefersGroupLayout(lines, original)) return PairByGroup(lines);
+
             List<LyricLine> result = new List<LyricLine>();
             LyricLine pending = null;   // 还没配到译文的原文
             for (int i = 0; i < lines.Count; i++)
@@ -484,6 +499,22 @@ namespace Skylark
                 if (pending != null && string.IsNullOrEmpty(pending.Translation)
                     && line.Time - pending.Time <= 60.0)
                 {
+                    // 例外：日语原句里「絶対徹夜」这类纯汉字行会被判成中文，它不是上一句的译文，
+                    // 而是自己的原文（下一行「绝对要熬夜了」才是它的译文）。
+                    // 分辨方法：如果下一行也不是原文语言，那这一行更可能是原文。
+                    if (i + 1 < lines.Count)
+                    {
+                        LyricLine next = lines[i + 1];
+                        // 下一行和本行时间戳相同 → 本行多半是「旧排版」里那句被标成下一句时间的译文，
+                        // 不是原文（例：[34.98]英勇无畏 维新革命 / [34.98]磊々落々反戦国家）。
+                        if (ScriptOf(next.Text) != original && next.Time - line.Time <= 60.0
+                            && Math.Abs(next.Time - line.Time) > 0.02)
+                        {
+                            result.Add(line);
+                            pending = line;
+                            continue;
+                        }
+                    }
                     pending.Translation = line.Text;
                     pending = null;
                     continue;
@@ -492,6 +523,55 @@ namespace Skylark
                 // 但它其实是原文；当成原文后，紧跟的「绝对要熬夜了」才能配到它）
                 result.Add(line);
                 pending = line;
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// 判断这首歌是不是「标准排版」：原文与译文时间戳相同、原文在前。
+        /// 看同一时间戳的成对行里，原文语言出现在前/后的次数谁多。
+        /// </summary>
+        private static bool PrefersGroupLayout(List<LyricLine> lines, string original)
+        {
+            int firstWins = 0, secondWins = 0;
+            for (int i = 0; i + 1 < lines.Count; i++)
+            {
+                if (Math.Abs(lines[i + 1].Time - lines[i].Time) > 0.02) continue;
+                bool a = ScriptOf(lines[i].Text) == original;
+                bool b = ScriptOf(lines[i + 1].Text) == original;
+                if (a && !b) firstWins++;
+                else if (b && !a) secondWins++;
+            }
+            return firstWins > 0 && firstWins >= secondWins;
+        }
+
+        /// <summary>标准排版：同一时间戳的一组合并成「第一行原文 + 其余全部作译文」。</summary>
+        private static List<LyricLine> PairByGroup(List<LyricLine> lines)
+        {
+            List<LyricLine> result = new List<LyricLine>();
+            int i = 0;
+            while (i < lines.Count)
+            {
+                LyricLine line = lines[i];
+                if (IsMetadataLine(line.Text))
+                {
+                    result.Add(line);
+                    i++;
+                    continue;
+                }
+                StringBuilder extra = null;
+                int j = i + 1;
+                while (j < lines.Count && Math.Abs(lines[j].Time - line.Time) <= 0.02
+                       && !IsMetadataLine(lines[j].Text))
+                {
+                    if (extra == null) extra = new StringBuilder();
+                    if (extra.Length > 0) extra.Append('\n');
+                    extra.Append(lines[j].Text);
+                    j++;
+                }
+                if (extra != null && extra.Length > 0) line.Translation = extra.ToString();
+                result.Add(line);
+                i = j;
             }
             return result;
         }
@@ -510,6 +590,10 @@ namespace Skylark
         private static string PickOriginalLanguage(string titleTag, string firstKind,
             int zh, int ja, int latin, int total)
         {
+            // 有假名的行只可能来自日文原文——中文译文里绝不会出现假名。
+            // 这条要放在最前面：实测《summertime》的 [ti:] 是英文标题、歌词却是日文，
+            // 而中文译文的行数又可能比日文原文多，只看标题或只看行数都会判错。
+            if (ja >= 1 && ja * 4 >= total) return "ja";
             string titleKind = ScriptOf(titleTag);
             if (!string.IsNullOrEmpty(titleTag) && CountOf(titleKind, zh, ja, latin) > 0) return titleKind;
             if (CountOf(firstKind, zh, ja, latin) * 4 >= total) return firstKind;
@@ -517,6 +601,49 @@ namespace Skylark
             if (ja > zh && ja >= latin) return "ja";
             if (latin > zh && latin > ja) return "latin";
             return firstKind;
+        }
+
+        /// <summary>「歌名 - 歌手」这种自动生成的行（网易云导出的 lrc 常见），不算歌词。</summary>
+        private static bool IsAutoTitleLine(string text, string titleTag, string artistTag)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(titleTag)) return false;
+            string t = text.Trim();
+            string title = titleTag.Trim();
+            string core = CoreTitle(title);     // 去掉「(中文译名)」这类括注后再比
+            // 「歌名」和「歌名 (中文译名)」两种写法都试一遍
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                string prefix = attempt == 0 ? title : core;
+                if (attempt == 1 && prefix == title) break;
+                if (t == prefix) return true;
+                if (!t.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                string rest = t.Substring(prefix.Length).TrimStart().TrimStart('-', '–', '—', '－').Trim();
+                if (rest.Length == 0) return true;          //「歌名 -」这种残行
+                // 后半段应当就是歌手名（可能带括号补充，也可能被截断）
+                if (string.IsNullOrEmpty(artistTag)) return true;
+                string artist = artistTag.Trim();
+                string artistCore = CoreTitle(artist);
+                if (artist.StartsWith(rest, StringComparison.Ordinal)
+                    || rest.StartsWith(artist, StringComparison.Ordinal)
+                    || artistCore.StartsWith(rest, StringComparison.Ordinal)
+                    || rest.StartsWith(artistCore, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>去掉「(…)/(中文译名)」这类括注，方便比对「歌名 - 歌手」行。</summary>
+        private static string CoreTitle(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            string t = text.Trim();
+            int cut = -1;
+            for (int i = 0; i < t.Length; i++)
+            {
+                if (t[i] == '(' || t[i] == '（') { cut = i; break; }
+            }
+            if (cut > 0) t = t.Substring(0, cut).Trim();
+            return t.Length > 0 ? t : text.Trim();
         }
 
         private static int CountOf(string kind, int zh, int ja, int latin)
