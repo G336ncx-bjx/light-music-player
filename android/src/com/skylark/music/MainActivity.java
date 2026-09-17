@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.9";
+    public static final String VERSION = "3.3.10";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -1250,23 +1250,6 @@ public class MainActivity extends Activity {
         play.addView(scanRow);
         box.addView(play);
 
-        // 关于与更新
-        LinearLayout updateCard = card();
-        updateCard.addView(cardTitle("关于与更新"));
-        updateCard.addView(hint("点「检查更新」才会去查（平时不会自己联网检查）。"
-                + "发现新版本后在应用里直接下载安装，装完自动删掉安装包。"));
-        updateStatus = text("当前版本 " + VERSION, 13, cText);
-        updateStatus.setPadding(0, dp(8), 0, 0);
-        updateCard.addView(updateStatus);
-        LinearLayout updateRow = row();
-        updateRow.addView(button("检查更新", true, new View.OnClickListener() {
-            public void onClick(View v) {
-                checkUpdate();
-            }
-        }));
-        updateCard.addView(updateRow);
-        box.addView(updateCard);
-
         // 外观
         LinearLayout appearance = card();
         appearance.addView(cardTitle("外观"));
@@ -1332,6 +1315,20 @@ public class MainActivity extends Activity {
             }
         });
         about.addView(repo);
+
+        // 更新也放在「关于」这张卡片里，一起在最下面
+        updateStatus = text("当前已是最新（" + VERSION + "）", 13, cText);
+        updateStatus.setPadding(0, dp(10), 0, 0);
+        about.addView(updateStatus);
+        LinearLayout updateRow = row();
+        updateRow.addView(button("检查更新", true, new View.OnClickListener() {
+            public void onClick(View v) {
+                checkUpdate();
+            }
+        }));
+        about.addView(updateRow);
+        about.addView(hint("点「检查更新」才会联网（平时不会自己检查）。发现新版本后"
+                + "在应用里直接下载安装，装完会自动删掉安装包。"));
         box.addView(about);
 
         return scroll;
