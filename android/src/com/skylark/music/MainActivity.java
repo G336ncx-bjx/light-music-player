@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.5";
+    public static final String VERSION = "3.3.6";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -174,6 +174,7 @@ public class MainActivity extends Activity {
         refreshQueue();
         refreshSettings();
         ui.post(ticker);
+        ui.post(lyricTicker);
     }
 
     @Override
@@ -181,6 +182,7 @@ public class MainActivity extends Activity {
         super.onPause();
         PlayerService.listener = null;
         ui.removeCallbacks(ticker);
+        ui.removeCallbacks(lyricTicker);
     }
 
     @Override
@@ -2018,6 +2020,19 @@ public class MainActivity extends Activity {
         public void run() {
             updateProgress();
             ui.postDelayed(this, 500);
+        }
+    };
+
+    /**
+     * 歌词单独用更快的节拍刷新：进度条每 500ms 刷一次就够了，但歌词跟着这个节拍走
+     * 会最多晚半秒才跳到下一句（听起来就是「唱到了才慢慢换句」）。
+     */
+    private final Runnable lyricTicker = new Runnable() {
+        public void run() {
+            if (PlayerService.instance != null && !lyricRows.isEmpty()) {
+                applyLyricHighlight(PlayerService.instance.position());
+            }
+            ui.postDelayed(this, 120);
         }
     };
 

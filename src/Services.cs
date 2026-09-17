@@ -381,6 +381,15 @@ namespace Skylark
         /// </summary>
         public static string Normalize(string text)
         {
+            return Normalize(text, 0);
+        }
+
+        /// <summary>
+        /// 规范化成「原文在上、译文在下、同一时间戳」，并整体平移 <paramref name="shiftSeconds"/> 秒。
+        /// 平移用于修正整条时间轴偏早/偏晚的歌词（例如片源开头带了静音垫）。
+        /// </summary>
+        public static string Normalize(string text, double shiftSeconds)
+        {
             if (text == null) return "";
             string newline = text.Contains("\r\n") ? "\r\n" : "\n";
 
@@ -413,7 +422,9 @@ namespace Skylark
                     sb.Append(line.Text).Append(newline);   // 纯文本歌词
                     continue;
                 }
-                string stamp = "[" + FormatStamp(line.Time) + "]";
+                double time = line.Time + shiftSeconds;
+                if (time < 0) time = 0;
+                string stamp = "[" + FormatStamp(time) + "]";
                 sb.Append(stamp).Append(line.Text).Append(newline);
                 if (!string.IsNullOrEmpty(line.Translation))
                     sb.Append(stamp).Append(line.Translation).Append(newline);

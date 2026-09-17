@@ -74,6 +74,20 @@ namespace Skylark
                 Environment.Exit(LyricFix(args.Length > 1 ? args[1] : null));
                 return;
             }
+            if (args.Length > 0 && args[0] == "--lyricshift")
+            {
+                AttachConsole();
+                double shift;
+                if (args.Length < 3 || !double.TryParse(args[2], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out shift))
+                {
+                    Console.WriteLine("usage: Skylark.exe --lyricshift <歌词文件或目录> <秒数，可为负>");
+                    Environment.Exit(1);
+                    return;
+                }
+                Environment.Exit(LyricFix(args[1], shift));
+                return;
+            }
             if (args.Length > 0 && args[0] == "--cloudtest")
             {
                 AttachConsole();
@@ -401,6 +415,11 @@ namespace Skylark
         /// </summary>
         private static int LyricFix(string path)
         {
+            return LyricFix(path, 0);
+        }
+
+        private static int LyricFix(string path, double shiftSeconds)
+        {
             if (string.IsNullOrEmpty(path))
             {
                 Console.WriteLine("usage: Skylark.exe --lyricfix <歌词文件或目录>");
@@ -428,11 +447,14 @@ namespace Skylark
                 try
                 {
                     string original = TextUtil.ReadAllTextSmart(file);
-                    string fixedText = LrcParser.Normalize(original);
+                    string fixedText = LrcParser.Normalize(original, shiftSeconds);
                     if (string.Equals(original, fixedText, StringComparison.Ordinal)) continue;
                     System.IO.File.WriteAllText(file, fixedText, new UTF8Encoding(false));
                     changed++;
-                    Console.WriteLine("  已规范化：" + System.IO.Path.GetFileName(file));
+                    Console.WriteLine(shiftSeconds == 0
+                        ? "  已规范化：" + System.IO.Path.GetFileName(file)
+                        : "  已平移 " + shiftSeconds.ToString("+0.0;-0.0") + " 秒："
+                          + System.IO.Path.GetFileName(file));
                 }
                 catch (Exception ex)
                 {
