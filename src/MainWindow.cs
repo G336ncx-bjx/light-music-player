@@ -21,7 +21,7 @@ namespace Skylark
     public partial class MainWindow : Window
     {
         public const string AppName = "云雀";
-        public const string AppVersion = "3.3.1";
+        public const string AppVersion = "3.3.2";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -1234,7 +1234,7 @@ namespace Skylark
             if (result.SkippedUnsupported > 0)
             {
                 message += string.Format(CultureInfo.InvariantCulture,
-                    "（已忽略 {0} 个不支持的格式，如 FLAC / OGG）", result.SkippedUnsupported);
+                    "（已忽略 {0} 个不支持的文件，如 ape / dsf / amr）", result.SkippedUnsupported);
             }
             ShowToast(message);
             UpdateQueueState();

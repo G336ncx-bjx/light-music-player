@@ -353,7 +353,7 @@ namespace Skylark
             set { CloudCacheModeValue = value < 0 ? 0 : (value > 2 ? 2 : value); }
         }
 
-        /// <summary>可选的 ffmpeg 路径：用于把 FLAC / OGG 等格式自动转成 MP3 播放。</summary>
+        /// <summary>可选的 ffmpeg 路径：用于把 OGG / OPUS / APE / WV 这类系统内核放不了的格式转成 MP3。</summary>
         [DataMember(Name = "ffmpegPath", Order = 39)]
         public string FfmpegPath { get; set; }
 

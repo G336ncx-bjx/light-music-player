@@ -171,7 +171,7 @@ namespace Skylark
             return null;
         }
 
-        /// <summary>转码后的 MP3 缓存路径（FLAC / OGG 等格式转码后放这里）。</summary>
+        /// <summary>转码后的 MP3 缓存路径（OGG / OPUS / APE 等格式转码后放这里）。</summary>
         public static string TranscodedPath(Song song)
         {
             return Path.ChangeExtension(FileFor(song), ".mp3");

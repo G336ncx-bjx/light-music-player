@@ -786,7 +786,7 @@ namespace Skylark
     {
         public List<Song> Songs;
         public List<DurationEntry> Cache;
-        /// <summary>被跳过的、不再支持的音频文件数量（例如 FLAC）。</summary>
+        /// <summary>被跳过的、不支持的音频文件数量（例如 ape / dsf / amr）。</summary>
         public int SkippedUnsupported;
 
         public ScanResult()

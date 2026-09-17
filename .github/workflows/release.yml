@@ -107,7 +107,9 @@ jobs:
             程序不会向任何服务器上传你的数据，只访问你在设置里填写的那个云盘地址；
             默认在本地只留**两首**：正在听的那一首 + 下一首（切歌几乎不用等，更早的会自动删掉）。
             设置里一个开关可以改成「听过的歌都缓存到本机」（可离线播放），也可以随时一键清理。
-            曲库统一使用 mp3 / m4a 等格式（v3.0.0 起不再支持 FLAC）。
+            支持的格式——**Windows**：mp3 / m4a / aac / wav / wma / flac / aiff 直接播放，
+            ogg / opus / ape / wv 在设置里指定 `ffmpeg.exe` 后自动转码；
+            **Android**：mp3 / m4a / aac / wav / wma / flac / ogg / opus 直接播放。
           files: |
             dist/Skylark.exe
             dist/Skylark-android.apk
