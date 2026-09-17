@@ -21,7 +21,7 @@ namespace Skylark
     public partial class MainWindow : Window
     {
         public const string AppName = "云雀";
-        public const string AppVersion = "3.3.0";
+        public const string AppVersion = "3.3.1";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -399,13 +399,15 @@ namespace Skylark
             if (desktopLyrics != null)
             {
                 desktopLyrics.ApplySettings();
-                desktopLyrics.FlashHint(locked ? "已锁定：鼠标可穿透，不会挡住任何操作" : "已解锁：可拖动、可右键");
+                desktopLyrics.FlashHint(locked
+                    ? "已锁定：鼠标可穿透（把鼠标移到右上角可解锁）"
+                    : "已解锁：可拖动、可右键");
             }
             SaveSettings();
             if (notify)
             {
                 ShowToast(locked
-                    ? "桌面歌词已锁定（鼠标穿透）· 快捷键 Ctrl+Alt+L 解锁"
+                    ? "桌面歌词已锁定（鼠标穿透）· 鼠标移到右上角、或按 Ctrl+Alt+L 解锁"
                     : "桌面歌词已解锁，可自由拖动");
                 Raise(SettingsChanged);
             }

@@ -367,6 +367,8 @@ namespace Skylark
             toolbarShown = true;
             hoverStarted = DateTime.Now;
             ApplyVisualState();
+            // 截图模式：锁定状态下把「解锁」小按钮也画出来，方便看效果
+            if (locked) ShowUnlockButton();
         }
 
         /// <summary>锁定状态下浮出的「解锁」按钮（供自检使用）。</summary>
@@ -415,13 +417,15 @@ namespace Skylark
             bool inside = cursor.X >= rect.Left && cursor.X <= rect.Right
                        && cursor.Y >= rect.Top && cursor.Y <= rect.Bottom;
 
-            // 鼠标靠近（窗口外扩一圈）就显示解锁按钮，离开一会儿再隐藏
-            int margin = 80;
-            bool near = cursor.X >= rect.Left - margin && cursor.X <= rect.Right + margin
-                     && cursor.Y >= rect.Top - margin && cursor.Y <= rect.Bottom + margin;
             if (locked)
             {
-                if (near) ShowUnlockButton();
+                // 只有鼠标靠近「解锁按钮」那一小块地方才浮出来（不是放在歌词上就出现），
+                // 离开一会儿再隐藏
+                RECT button = UnlockButtonScreenRect();
+                int margin = 34;
+                bool nearButton = cursor.X >= button.Left - margin && cursor.X <= button.Right + margin
+                               && cursor.Y >= button.Top - margin && cursor.Y <= button.Bottom + margin;
+                if (nearButton) ShowUnlockButton();
                 else ScheduleHideUnlockButton();
             }
 
@@ -501,6 +505,50 @@ namespace Skylark
             Cursor = locked ? Cursors.Arrow : Cursors.SizeAll;
         }
 
+        /// <summary>
+        /// 解锁按钮在屏幕上的矩形（物理像素），算法与 LyricsUnlockWindow.PlaceNear 保持一致。
+        /// 按钮还没创建时也能算出来 —— 「鼠标靠近才显示」才有判断依据。
+        /// </summary>
+        private RECT UnlockButtonScreenRect()
+        {
+            RECT rect = new RECT();
+            try
+            {
+                double width = unlockButton != null && unlockButton.ActualWidth > 1 ? unlockButton.ActualWidth : 54;
+                double height = unlockButton != null && unlockButton.ActualHeight > 1 ? unlockButton.ActualHeight : 22;
+                double left = Left + ActualWidth - width - 34;
+                double top = Top + 6;
+
+                Rect area = SystemParameters.WorkArea;
+                if (left < area.Left) left = area.Left + 8;
+                if (left + width > area.Right) left = area.Right - width - 8;
+                if (top < area.Top) top = area.Top + 8;
+                if (top + height > area.Bottom) top = area.Bottom - height - 8;
+
+                double scaleX = 1, scaleY = 1;
+                PresentationSource source = PresentationSource.FromVisual(this);
+                if (source != null && source.CompositionTarget != null)
+                {
+                    scaleX = source.CompositionTarget.TransformToDevice.M11;
+                    scaleY = source.CompositionTarget.TransformToDevice.M22;
+                }
+                Point screen = PointToScreen(new Point(left - Left, top - Top));
+                rect.Left = (int)Math.Round(screen.X);
+                rect.Top = (int)Math.Round(screen.Y);
+                rect.Right = (int)Math.Round(screen.X + width * scaleX);
+                rect.Bottom = (int)Math.Round(screen.Y + height * scaleY);
+            }
+            catch (Exception)
+            {
+                // 算不出来就丢到屏幕外，等价于「不显示」
+                rect.Left = -20000;
+                rect.Top = -20000;
+                rect.Right = -19000;
+                rect.Bottom = -19000;
+            }
+            return rect;
+        }
+
         private void ShowUnlockButton()
         {
             if (!locked) return;
@@ -543,7 +591,7 @@ namespace Skylark
             if (unlockHideTimer == null)
             {
                 unlockHideTimer = new DispatcherTimer();
-                unlockHideTimer.Interval = TimeSpan.FromMilliseconds(1400);
+                unlockHideTimer.Interval = TimeSpan.FromMilliseconds(900);
                 unlockHideTimer.Tick += delegate
                 {
                     unlockHideTimer.Stop();

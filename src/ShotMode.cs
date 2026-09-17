@@ -93,6 +93,18 @@ namespace Skylark
                 width = 980;
                 height = 200;
             }
+            else if (view == "unlock")
+            {
+                // 单独看一眼锁定状态下的「解锁」小按钮（它是独立窗口，不会出现在歌词截图里）
+                LyricsUnlockWindow unlock = new LyricsUnlockWindow(window);
+                FrameworkElement content = unlock.Content as FrameworkElement;
+                content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                root = content;
+                width = (int)Math.Ceiling(content.DesiredSize.Width) + 1;
+                height = (int)Math.Ceiling(content.DesiredSize.Height) + 1;
+                Console.WriteLine("unlock button size: " + width + " x " + height
+                    + " (含 4 倍放大预览见 unlock-btn-4x.png)");
+            }
             else
             {
                 root = window.Content as FrameworkElement;

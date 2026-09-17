@@ -32,17 +32,17 @@ namespace Skylark
             WindowStartupLocation = WindowStartupLocation.Manual;
             FontFamily = Ui.Font;
 
-            frame.CornerRadius = new CornerRadius(10);
-            frame.Padding = new Thickness(11, 6, 13, 6);
+            frame.CornerRadius = new CornerRadius(7);
+            frame.Padding = new Thickness(7, 2, 8, 2);
             frame.Background = new SolidColorBrush(Color.FromArgb(190, 16, 19, 26));
             frame.Cursor = Cursors.Hand;
             frame.ToolTip = "点这里解锁桌面歌词（解锁后可拖动、调整字号，Ctrl+Alt+L 也可以）";
 
-            Canvas icon = Icons.Create("unlock", 15, "OnAccent");
+            Canvas icon = Icons.Create("unlock", 11, "OnAccent");
             icon.VerticalAlignment = VerticalAlignment.Center;
-            TextBlock label = Ui.Text("解锁", 12.5, "OnAccent");
+            TextBlock label = Ui.Text("解锁", 11, "OnAccent");
             label.VerticalAlignment = VerticalAlignment.Center;
-            label.Margin = new Thickness(7, 0, 0, 0);
+            label.Margin = new Thickness(4, 0, 0, 0);
             frame.Child = Ui.Row(0, icon, label);
 
             frame.MouseLeftButtonUp += delegate { main.ToggleLyricLock(); };
