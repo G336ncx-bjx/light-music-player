@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.8";
+    public static final String VERSION = "3.3.9";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -1253,15 +1253,15 @@ public class MainActivity extends Activity {
         // 关于与更新
         LinearLayout updateCard = card();
         updateCard.addView(cardTitle("关于与更新"));
-        updateCard.addView(hint("更新包就放在你自己的云盘里（Skylark-android-版本号.apk），"
-                + "点下面就能直接下载安装，不用去 GitHub；装完会自动删掉安装包。"));
+        updateCard.addView(hint("点「检查更新」才会去查（平时不会自己联网检查）。"
+                + "发现新版本后在应用里直接下载安装，装完自动删掉安装包。"));
         updateStatus = text("当前版本 " + VERSION, 13, cText);
         updateStatus.setPadding(0, dp(8), 0, 0);
         updateCard.addView(updateStatus);
         LinearLayout updateRow = row();
         updateRow.addView(button("检查更新", true, new View.OnClickListener() {
             public void onClick(View v) {
-                checkUpdate(true);
+                checkUpdate();
             }
         }));
         updateCard.addView(updateRow);
@@ -1497,38 +1497,51 @@ public class MainActivity extends Activity {
 
     // ---------------------------------------------------------------- 应用内更新
 
-    /** 检查更新：从云盘文件列表里找 Skylark-android-<版本>.apk。 */
-    private void checkUpdate(final boolean manual) {
-        final String endpoint = Store.endpoint;
-        if (endpoint == null || endpoint.length() == 0) {
-            if (manual) toast("还没连接云盘，先在设置里填好分享链接或令牌");
-            return;
-        }
-        if (manual) updateStatus.setText("正在检查…");
+    /**
+     * 检查更新：只在用户点「检查更新」时执行（不自动检查、不后台轮询）。
+     * 默认走 GitHub Releases；GitHub 不通时退回云盘里那份同名安装包（如果有）。
+     */
+    private void checkUpdate() {
+        updateStatus.setText("正在检查…");
         new Thread(new Runnable() {
             public void run() {
-                final Update.Found found;
-                final String error;
+                Update.Found found = null;
+                String error = null;
                 try {
-                    found = Update.findNewer(Cloud.listAll(endpoint), VERSION);
-                    error = null;
+                    found = Update.fromGitHub();
                 } catch (Exception e) {
-                    ui.post(new Runnable() {
-                        public void run() {
-                            if (manual) updateStatus.setText("检查失败：" + Util.shorten(e.getMessage()));
+                    error = e.getMessage();
+                    // GitHub 不通时退回云盘里那份（如果有）
+                    if (Store.endpoint != null && Store.endpoint.length() > 0) {
+                        try {
+                            found = Update.findNewer(Cloud.listAll(Store.endpoint), VERSION);
+                            error = null;
+                        } catch (Exception ignored) {
+                            // 还是不行就用上面的 error
                         }
-                    });
-                    return;
+                    }
                 }
+                final Update.Found result = found;
+                final String message = error;
                 ui.post(new Runnable() {
                     public void run() {
-                        if (found == null) {
-                            updateStatus.setText("当前版本 " + VERSION + "（已是最新）");
-                            if (manual) toast("已是最新版本");
+                        if (result == null) {
+                            if (message != null && message.length() > 0) {
+                                updateStatus.setText("检查失败：" + Util.shorten(message));
+                                toast("检查失败：" + Util.shorten(message));
+                            } else {
+                                updateStatus.setText("当前版本 " + VERSION + "（已是最新）");
+                                toast("已是最新版本");
+                            }
                             return;
                         }
-                        updateStatus.setText("发现新版本 " + found.version);
-                        showUpdateDialog(found);
+                        if (Update.compare(result.version, VERSION) <= 0) {
+                            updateStatus.setText("当前版本 " + VERSION + "（已是最新）");
+                            toast("已是最新版本");
+                            return;
+                        }
+                        updateStatus.setText("发现新版本 " + result.version);
+                        showUpdateDialog(result);
                     }
                 });
             }
@@ -1539,7 +1552,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("发现新版本 " + found.version)
                 .setMessage("当前版本 " + VERSION + "。\n\n"
-                        + "更新包直接从你自己的云盘下载，装完会自动删除安装包。")
+                        + "在应用里直接下载安装包，装完会自动删掉安装包。")
                 .setNegativeButton("以后再说", null)
                 .setPositiveButton("立即更新", new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int which) {
@@ -1568,7 +1581,7 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             public void run() {
                 try {
-                    Cloud.download(endpoint, found.path, target, new Util.Progress() {
+                    Util.Progress progress = new Util.Progress() {
                         public void onProgress(final long done, final long total) {
                             final int percent = total > 0 ? (int) (done * 100 / total) : 0;
                             ui.post(new Runnable() {
@@ -1577,7 +1590,12 @@ public class MainActivity extends Activity {
                                 }
                             });
                         }
-                    });
+                    };
+                    if (found.url != null && found.url.length() > 0) {
+                        Util.downloadTo(found.url, null, target, progress);
+                    } else {
+                        Cloud.download(endpoint, found.path, target, progress);
+                    }
                     ui.post(new Runnable() {
                         public void run() {
                             dialog.dismiss();
@@ -1656,7 +1674,6 @@ public class MainActivity extends Activity {
                     }
                     final int skippedCount = skipped;
                     final String repo = Cloud.isToken(endpoint) ? Cloud.repoName(endpoint) : "";
-                    final Update.Found newer = Update.findNewer(entries, VERSION);
                     ui.post(new Runnable() {
                         public void run() {
                             if (token != scanToken) return;
@@ -1672,14 +1689,6 @@ public class MainActivity extends Activity {
                             refreshQueue();
                         }
                     });
-                    if (newer != null) {
-                        ui.post(new Runnable() {
-                            public void run() {
-                                if (updateStatus != null) updateStatus.setText("发现新版本 " + newer.version);
-                                showUpdateDialog(newer);
-                            }
-                        });
-                    }
                     probeDurations(token);
                 } catch (final Exception e) {
                     ui.post(new Runnable() {
