@@ -40,6 +40,7 @@ namespace Skylark
         private DispatcherTimer pollTimer;
         private DispatcherTimer hintTimer;
         private DispatcherTimer unlockHideTimer;
+        private DispatcherTimer unlockSafetyTimer;
         private LyricsUnlockWindow unlockButton;
 
         public DesktopLyricsWindow(MainWindow owner)
@@ -128,6 +129,7 @@ namespace Skylark
             {
                 if (pollTimer != null) pollTimer.Stop();
                 if (hintTimer != null) hintTimer.Stop();
+                if (unlockSafetyTimer != null) unlockSafetyTimer.Stop();
                 DisposeUnlockButton();
             };
         }
@@ -377,6 +379,11 @@ namespace Skylark
             get { return unlockButton; }
         }
 
+        /// <summary>诊断用：轮询次数 / 自动隐藏次数 / 最后一次算出的解锁按钮矩形。</summary>
+        public int PollTicks;
+        public int UnlockHideCalls;
+        public string LastUnlockRect = "(未算过)";
+
         private void ChangeFont(double delta)
         {
             double size = main.Settings.LyricFontSize + delta;
@@ -402,13 +409,18 @@ namespace Skylark
         /// <summary>锁定状态下窗口收不到鼠标事件，因此轮询光标位置来判断悬停。</summary>
         private void PollCursor()
         {
-            if (!IsVisible) return;
-            if (dragging) return;
+            PollTicks++;
+            if (!IsVisible) { LastUnlockRect = "轮询：窗口不可见"; return; }
+            if (dragging) { LastUnlockRect = "轮询：正在拖动"; return; }
             POINT cursor;
-            if (!GetCursorPos(out cursor)) return;
+            if (!GetCursorPos(out cursor)) { LastUnlockRect = "轮询：取光标失败"; return; }
 
             RECT rect;
-            if (!GetWindowRect(new WindowInteropHelper(this).Handle, out rect)) return;
+            if (!GetWindowRect(new WindowInteropHelper(this).Handle, out rect))
+            {
+                LastUnlockRect = "轮询：取窗口矩形失败";
+                return;
+            }
             rect.Left += 26;
             rect.Top += 26;
             rect.Right -= 26;
@@ -425,6 +437,8 @@ namespace Skylark
                 int margin = 34;
                 bool nearButton = cursor.X >= button.Left - margin && cursor.X <= button.Right + margin
                                && cursor.Y >= button.Top - margin && cursor.Y <= button.Bottom + margin;
+                LastUnlockRect = "光标 " + cursor.X + "," + cursor.Y + " / 按钮 " + button.Left + "," + button.Top
+                    + ".." + button.Right + "," + button.Bottom + " / 靠近=" + nearButton;
                 if (nearButton) ShowUnlockButton();
                 else ScheduleHideUnlockButton();
             }
@@ -514,8 +528,8 @@ namespace Skylark
             RECT rect = new RECT();
             try
             {
-                double width = unlockButton != null && unlockButton.ActualWidth > 1 ? unlockButton.ActualWidth : 54;
-                double height = unlockButton != null && unlockButton.ActualHeight > 1 ? unlockButton.ActualHeight : 22;
+                double width = unlockButton != null && unlockButton.ActualWidth > 1 ? unlockButton.ActualWidth : 23;
+                double height = unlockButton != null && unlockButton.ActualHeight > 1 ? unlockButton.ActualHeight : 21;
                 double left = Left + ActualWidth - width - 34;
                 double top = Top + 6;
 
@@ -555,6 +569,8 @@ namespace Skylark
             if (unlockButton == null)
             {
                 unlockButton = new LyricsUnlockWindow(main);
+                // 鼠标真的移到小按钮上时，取消「兜底自动隐藏」，避免正在点的时候消失
+                unlockButton.OnHover = delegate { CancelUnlockHide(); ArmUnlockSafetyHide(); };
                 unlockButton.Show();
                 unlockVisible = true;
             }
@@ -565,11 +581,35 @@ namespace Skylark
                 unlockVisible = true;
             }
             CancelUnlockHide();
+            ArmUnlockSafetyHide();
+        }
+
+        /// <summary>
+        /// 兜底：万一读不到鼠标位置（实测在受限环境里 GetCursorPos 会直接失败），
+        /// 也不能让这个小按钮永远挂在屏幕上。显示后一段时间内没人再刷新就自己收起来。
+        /// </summary>
+        private void ArmUnlockSafetyHide()
+        {
+            if (unlockSafetyTimer == null)
+            {
+                unlockSafetyTimer = new DispatcherTimer();
+                unlockSafetyTimer.Interval = TimeSpan.FromSeconds(4.5);
+                unlockSafetyTimer.Tick += delegate
+                {
+                    unlockSafetyTimer.Stop();
+                    if (locked) HideUnlockButtonSilently();
+                };
+            }
+            // 每次「显示」都重新计时：只要轮询还在不停地把按钮刷出来（说明鼠标就在附近），
+            // 它就永远不会超时；一旦没人刷新了，最多 4.5 秒就自己收起来。
+            unlockSafetyTimer.Stop();
+            unlockSafetyTimer.Start();
         }
 
         /// <summary>只是隐藏（保留窗口实例，避免反复创建）。</summary>
         private void HideUnlockButtonSilently()
         {
+            UnlockHideCalls++;
             if (unlockButton == null) return;
             unlockButton.Hide();
             unlockVisible = false;

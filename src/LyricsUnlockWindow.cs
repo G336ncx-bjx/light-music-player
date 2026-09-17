@@ -14,8 +14,15 @@ namespace Skylark
     /// </summary>
     public class LyricsUnlockWindow : Window
     {
+        private const double IconSize = 12;
+        private const double PadX = 5;
+        private const double PadY = 4;
+
         private readonly MainWindow main;
         private readonly Border frame = new Border();
+
+        /// <summary>鼠标移到按钮上时通知外面（用来取消「自动隐藏」计时）。</summary>
+        public Action OnHover;
 
         public LyricsUnlockWindow(MainWindow owner)
         {
@@ -28,31 +35,37 @@ namespace Skylark
             ShowInTaskbar = false;
             ShowActivated = false;
             ResizeMode = ResizeMode.NoResize;
-            SizeToContent = SizeToContent.WidthAndHeight;
             WindowStartupLocation = WindowStartupLocation.Manual;
             FontFamily = Ui.Font;
 
-            frame.CornerRadius = new CornerRadius(7);
-            frame.Padding = new Thickness(7, 2, 8, 2);
-            frame.Background = new SolidColorBrush(Color.FromArgb(190, 16, 19, 26));
+            // 尺寸写死：内容就是一个小图标加内边距。
+            // 千万别改成 SizeToContent —— 实测在「无边框 + 透明 + 没设 Left/Top」这个组合下，
+            // WPF 会把窗口撑到 134.7 x 37.3 DIP（内容只有 22 x 20），
+            // 结果就是屏幕上出现一大块深色方块，怎么改图标大小都没用。
+            Width = IconSize + PadX * 2;
+            Height = IconSize + PadY * 2;
+
+            frame.CornerRadius = new CornerRadius(6);
+            frame.Padding = new Thickness(PadX, PadY, PadX, PadY);
+            frame.Background = new SolidColorBrush(Color.FromArgb(170, 16, 19, 26));
             frame.Cursor = Cursors.Hand;
             frame.ToolTip = "点这里解锁桌面歌词（解锁后可拖动、调整字号，Ctrl+Alt+L 也可以）";
 
-            Canvas icon = Icons.Create("unlock", 11, "OnAccent");
+            // 只有一个小图标（鼠标悬停会弹提示），不再带「解锁」两个字
+            Canvas icon = Icons.Create("unlock", IconSize, "OnAccent");
             icon.VerticalAlignment = VerticalAlignment.Center;
-            TextBlock label = Ui.Text("解锁", 11, "OnAccent");
-            label.VerticalAlignment = VerticalAlignment.Center;
-            label.Margin = new Thickness(4, 0, 0, 0);
-            frame.Child = Ui.Row(0, icon, label);
+            icon.HorizontalAlignment = HorizontalAlignment.Center;
+            frame.Child = icon;
 
             frame.MouseLeftButtonUp += delegate { main.ToggleLyricLock(); };
             frame.MouseEnter += delegate
             {
-                frame.Background = new SolidColorBrush(Color.FromArgb(240, 36, 42, 56));
+                frame.Background = new SolidColorBrush(Color.FromArgb(235, 36, 42, 56));
+                if (OnHover != null) OnHover();
             };
             frame.MouseLeave += delegate
             {
-                frame.Background = new SolidColorBrush(Color.FromArgb(190, 16, 19, 26));
+                frame.Background = new SolidColorBrush(Color.FromArgb(170, 16, 19, 26));
             };
 
             Content = frame;

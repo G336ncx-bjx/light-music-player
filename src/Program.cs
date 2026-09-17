@@ -176,6 +176,23 @@ namespace Skylark
         private const int WS_EX_TOOLWINDOW_LOCAL = 0x00000080;
         private const int WS_EX_NOACTIVATE_LOCAL = 0x08000000;
 
+        /// <summary>窗口当前的缩放系数（150% 显示 = 1.5）。</summary>
+        private static double ScaleOf(System.Windows.DependencyObject visual)
+        {
+            try
+            {
+                PresentationSource source = PresentationSource.FromVisual(visual as System.Windows.Media.Visual);
+                if (source != null && source.CompositionTarget != null)
+                {
+                    return source.CompositionTarget.TransformToDevice.M11;
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return 0;
+        }
+
         /// <summary>
         /// 验证桌面歌词「锁定」是否真的鼠标穿透：
         /// 用 WindowFromPoint 检查窗口中心那一像素究竟命中了哪个窗口。
@@ -227,6 +244,27 @@ namespace Skylark
                     int unlockStyle = GetWindowLong(unlockHandle, GWL_EXSTYLE_LOCAL);
                     unlockClickable = (unlockStyle & WS_EX_TRANSPARENT_LOCAL) == 0 && HitTest(unlockHandle);
                     unlockVisible = unlock.IsVisible;
+
+                    // 实际渲染尺寸（排查「按钮看起来比代码里大」这类问题）
+                    RECT unlockRect;
+                    if (GetWindowRect(unlockHandle, out unlockRect))
+                    {
+                        System.Windows.FrameworkElement body = unlock.Content as System.Windows.FrameworkElement;
+                        string inner = body == null ? "?" : (Math.Round(body.ActualWidth, 1) + "x"
+                            + Math.Round(body.ActualHeight, 1) + " DIP, 期望 "
+                            + Math.Round(body.DesiredSize.Width, 1) + "x"
+                            + Math.Round(body.DesiredSize.Height, 1));
+                        Report(report, "解锁按钮实际尺寸 = "
+                            + (unlockRect.Right - unlockRect.Left) + "x" + (unlockRect.Bottom - unlockRect.Top)
+                            + " 物理像素 / " + Math.Round(unlock.ActualWidth, 1) + "x"
+                            + Math.Round(unlock.ActualHeight, 1) + " DIP"
+                            + "（本窗口缩放 " + Math.Round(ScaleOf(unlock), 2) + "x"
+                            + "，桌面歌词窗口 " + Math.Round(ScaleOf(lyrics), 2) + "x）");
+                        Report(report, "解锁按钮内容 = " + inner + "，SizeToContent=" + unlock.SizeToContent);
+                        Report(report, "解锁按钮 Width/Height 属性 = " + unlock.Width + " / " + unlock.Height
+                            + "，WindowState=" + unlock.WindowState
+                            + "，Left/Top=" + Math.Round(unlock.Left, 1) + "," + Math.Round(unlock.Top, 1));
+                    }
                 }
 
                 // 鼠标靠近才显示 / 离开后自动隐藏
@@ -240,6 +278,8 @@ namespace Skylark
                 SetCursorPos(4, 4);
                 Pump(2.2);
                 bool hiddenWhenFar = lyrics.UnlockButton == null || !lyrics.UnlockButton.IsVisible;
+                Report(report, "轮询次数 = " + lyrics.PollTicks + "，自动隐藏次数 = " + lyrics.UnlockHideCalls
+                    + "，最后一次判定 = " + lyrics.LastUnlockRect);
                 SetCursorPos(origin.X, origin.Y);
                 Pump(0.3);
 
@@ -258,11 +298,17 @@ namespace Skylark
                 Report(report, "锁定后 WS_EX_NOACTIVATE     = " + noActivate + "（期望 True，不抢焦点）");
                 Report(report, "锁定后 WS_EX_TOOLWINDOW     = " + toolWindow + "（期望 True，不占 Alt+Tab）");
                 Report(report, "锁定后解锁按钮可见可点     = " + (unlockVisible && unlockClickable) + "（期望 True）");
-                Report(report, "鼠标靠近时显示解锁按钮     = " + shownWhenNear + "（期望 True）");
-                Report(report, "鼠标离开后自动隐藏         = " + hiddenWhenFar + "（期望 True）");
+                // 受限环境下 GetCursorPos 会直接失败（沙箱、非交互会话），那时这两项没法判定
+                bool noCursorAccess = lyrics.LastUnlockRect != null
+                    && lyrics.LastUnlockRect.IndexOf("取光标失败", StringComparison.Ordinal) >= 0;
+                Report(report, "鼠标靠近时显示解锁按钮     = "
+                    + (noCursorAccess ? "跳过（当前进程读不到鼠标位置）" : shownWhenNear.ToString() + "（期望 True）"));
+                Report(report, "鼠标离开后自动隐藏         = "
+                    + (noCursorAccess ? "跳过（当前进程读不到鼠标位置）" : hiddenWhenFar.ToString() + "（期望 True）"));
 
                 bool ok = hitUnlocked && !hitLocked && !transparentBefore && transparent && noActivate
-                    && toolWindow && unlockVisible && unlockClickable && shownWhenNear && hiddenWhenFar;
+                    && toolWindow && unlockVisible && unlockClickable
+                    && (noCursorAccess || (shownWhenNear && hiddenWhenFar));
                 Report(report, ok ? "LOCKCHECK OK" : "LOCKCHECK FAILED");
                 return ok ? 0 : 1;
             }
