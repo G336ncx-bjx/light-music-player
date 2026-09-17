@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.3";
+    public static final String VERSION = "3.3.4";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -927,6 +927,9 @@ public class MainActivity extends Activity {
 
         lyricScroll = new ScrollView(this);
         lyricScroll.setBackground(round(cSurface, 14));
+        // 歌词滚动时不要冒出滚动条（观感很脏，手机上也没必要）
+        lyricScroll.setVerticalScrollBarEnabled(false);
+        lyricScroll.setHorizontalScrollBarEnabled(false);
         lyricScroll.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         lyricScroll.setOnTouchListener(new View.OnTouchListener() {
@@ -1051,11 +1054,16 @@ public class MainActivity extends Activity {
             LinearLayout item = column();
             item.setPadding(0, dp(9), 0, dp(9));
             TextView original = text(line.text, 16, cText);
-            item.addView(original);
+            // 歌词行居中显示（和电脑版歌词页一致）
+            original.setGravity(Gravity.CENTER);
+            item.addView(original, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             if (line.hasTranslation()) {
                 TextView trans = text(line.translation, 14, cDim);
+                trans.setGravity(Gravity.CENTER);
                 trans.setPadding(0, dp(3), 0, 0);
-                item.addView(trans);
+                item.addView(trans, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
             final int index = i;
             item.setOnClickListener(new View.OnClickListener() {
