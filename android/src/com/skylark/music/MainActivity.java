@@ -2,6 +2,7 @@ package com.skylark.music;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -59,7 +60,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.7";
+    public static final String VERSION = "3.3.8";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -107,7 +108,7 @@ public class MainActivity extends Activity {
     // 设置
     private EditText linkInput, tokenInput;
     private Switch cacheSwitch;
-    private TextView connInfo, cacheInfo, hiddenInfo;
+    private TextView connInfo, cacheInfo, hiddenInfo, updateStatus;
     private final TextView[] themeButtons = new TextView[3];
     private TextView cacheModeHint;
 
@@ -131,6 +132,9 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         palette();
         Store.load(this);
+
+        // 更新完（或放弃更新）后把没用的安装包删掉
+        Update.cleanUp(this);
 
         setContentView(buildRoot());
         selectTab(lastTab);
@@ -1246,6 +1250,23 @@ public class MainActivity extends Activity {
         play.addView(scanRow);
         box.addView(play);
 
+        // 关于与更新
+        LinearLayout updateCard = card();
+        updateCard.addView(cardTitle("关于与更新"));
+        updateCard.addView(hint("更新包就放在你自己的云盘里（Skylark-android-版本号.apk），"
+                + "点下面就能直接下载安装，不用去 GitHub；装完会自动删掉安装包。"));
+        updateStatus = text("当前版本 " + VERSION, 13, cText);
+        updateStatus.setPadding(0, dp(8), 0, 0);
+        updateCard.addView(updateStatus);
+        LinearLayout updateRow = row();
+        updateRow.addView(button("检查更新", true, new View.OnClickListener() {
+            public void onClick(View v) {
+                checkUpdate(true);
+            }
+        }));
+        updateCard.addView(updateRow);
+        box.addView(updateCard);
+
         // 外观
         LinearLayout appearance = card();
         appearance.addView(cardTitle("外观"));
@@ -1474,6 +1495,110 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    // ---------------------------------------------------------------- 应用内更新
+
+    /** 检查更新：从云盘文件列表里找 Skylark-android-<版本>.apk。 */
+    private void checkUpdate(final boolean manual) {
+        final String endpoint = Store.endpoint;
+        if (endpoint == null || endpoint.length() == 0) {
+            if (manual) toast("还没连接云盘，先在设置里填好分享链接或令牌");
+            return;
+        }
+        if (manual) updateStatus.setText("正在检查…");
+        new Thread(new Runnable() {
+            public void run() {
+                final Update.Found found;
+                final String error;
+                try {
+                    found = Update.findNewer(Cloud.listAll(endpoint), VERSION);
+                    error = null;
+                } catch (Exception e) {
+                    ui.post(new Runnable() {
+                        public void run() {
+                            if (manual) updateStatus.setText("检查失败：" + Util.shorten(e.getMessage()));
+                        }
+                    });
+                    return;
+                }
+                ui.post(new Runnable() {
+                    public void run() {
+                        if (found == null) {
+                            updateStatus.setText("当前版本 " + VERSION + "（已是最新）");
+                            if (manual) toast("已是最新版本");
+                            return;
+                        }
+                        updateStatus.setText("发现新版本 " + found.version);
+                        showUpdateDialog(found);
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void showUpdateDialog(final Update.Found found) {
+        new AlertDialog.Builder(this)
+                .setTitle("发现新版本 " + found.version)
+                .setMessage("当前版本 " + VERSION + "。\n\n"
+                        + "更新包直接从你自己的云盘下载，装完会自动删除安装包。")
+                .setNegativeButton("以后再说", null)
+                .setPositiveButton("立即更新", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        startUpdate(found);
+                    }
+                })
+                .show();
+    }
+
+    private void startUpdate(final Update.Found found) {
+        if (!Update.canInstall(this)) {
+            toast("请先允许「安装未知应用」，然后再点一次更新");
+            Update.openInstallSettings(this);
+            return;
+        }
+        final ProgressDialog dialog = new ProgressDialog(this);
+        dialog.setTitle("正在更新到 " + found.version);
+        dialog.setMessage("正在从云盘下载…");
+        dialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        dialog.setMax(100);
+        dialog.setCancelable(false);
+        dialog.show();
+
+        final String endpoint = Store.endpoint;
+        final File target = Update.apkFile(this);
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    Cloud.download(endpoint, found.path, target, new Util.Progress() {
+                        public void onProgress(final long done, final long total) {
+                            final int percent = total > 0 ? (int) (done * 100 / total) : 0;
+                            ui.post(new Runnable() {
+                                public void run() {
+                                    dialog.setProgress(percent);
+                                }
+                            });
+                        }
+                    });
+                    ui.post(new Runnable() {
+                        public void run() {
+                            dialog.dismiss();
+                            toast("下载完成，请在系统提示里确认安装");
+                            Update.install(MainActivity.this, target);
+                        }
+                    });
+                } catch (final Exception e) {
+                    if (target.exists()) target.delete();
+                    ui.post(new Runnable() {
+                        public void run() {
+                            dialog.dismiss();
+                            updateStatus.setText("更新失败：" + Util.shorten(e.getMessage()));
+                            toast("更新失败：" + Util.shorten(e.getMessage()));
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
     // ---------------------------------------------------------------- 扫描云盘
 
     private void startScan(final boolean goToLibrary) {
@@ -1531,6 +1656,7 @@ public class MainActivity extends Activity {
                     }
                     final int skippedCount = skipped;
                     final String repo = Cloud.isToken(endpoint) ? Cloud.repoName(endpoint) : "";
+                    final Update.Found newer = Update.findNewer(entries, VERSION);
                     ui.post(new Runnable() {
                         public void run() {
                             if (token != scanToken) return;
@@ -1546,6 +1672,14 @@ public class MainActivity extends Activity {
                             refreshQueue();
                         }
                     });
+                    if (newer != null) {
+                        ui.post(new Runnable() {
+                            public void run() {
+                                if (updateStatus != null) updateStatus.setText("发现新版本 " + newer.version);
+                                showUpdateDialog(newer);
+                            }
+                        });
+                    }
                     probeDurations(token);
                 } catch (final Exception e) {
                     ui.post(new Runnable() {
