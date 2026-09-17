@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.10";
+    public static final String VERSION = "3.3.11";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -1328,7 +1328,8 @@ public class MainActivity extends Activity {
         }));
         about.addView(updateRow);
         about.addView(hint("点「检查更新」才会联网（平时不会自己检查）。发现新版本后"
-                + "在应用里直接下载安装，装完会自动删掉安装包。"));
+                + "在应用里直接下载安装（更新包放在云盘上专门的 apk 仓库里），"
+                + "装完会自动删掉安装包。"));
         box.addView(about);
 
         return scroll;
@@ -1496,7 +1497,7 @@ public class MainActivity extends Activity {
 
     /**
      * 检查更新：只在用户点「检查更新」时执行（不自动检查、不后台轮询）。
-     * 默认走 GitHub Releases；GitHub 不通时退回云盘里那份同名安装包（如果有）。
+     * 更新包放在云盘上那个专门的 apk 仓库里，和歌曲库分开。
      */
     private void checkUpdate() {
         updateStatus.setText("正在检查…");
@@ -1505,18 +1506,9 @@ public class MainActivity extends Activity {
                 Update.Found found = null;
                 String error = null;
                 try {
-                    found = Update.fromGitHub();
+                    found = Update.check();
                 } catch (Exception e) {
                     error = e.getMessage();
-                    // GitHub 不通时退回云盘里那份（如果有）
-                    if (Store.endpoint != null && Store.endpoint.length() > 0) {
-                        try {
-                            found = Update.findNewer(Cloud.listAll(Store.endpoint), VERSION);
-                            error = null;
-                        } catch (Exception ignored) {
-                            // 还是不行就用上面的 error
-                        }
-                    }
                 }
                 final Update.Found result = found;
                 final String message = error;
@@ -1573,7 +1565,6 @@ public class MainActivity extends Activity {
         dialog.setCancelable(false);
         dialog.show();
 
-        final String endpoint = Store.endpoint;
         final File target = Update.apkFile(this);
         new Thread(new Runnable() {
             public void run() {
@@ -1588,11 +1579,7 @@ public class MainActivity extends Activity {
                             });
                         }
                     };
-                    if (found.url != null && found.url.length() > 0) {
-                        Util.downloadTo(found.url, null, target, progress);
-                    } else {
-                        Cloud.download(endpoint, found.path, target, progress);
-                    }
+                    Cloud.download(Update.UPDATE_ENDPOINT, found.path, target, progress);
                     ui.post(new Runnable() {
                         public void run() {
                             dialog.dismiss();

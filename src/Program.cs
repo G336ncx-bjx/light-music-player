@@ -541,7 +541,9 @@ namespace Skylark
                 System.IO.SearchOption.AllDirectories))
             {
                 string ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
-                if (ext == ".lrc" || Array.IndexOf(LibraryScanner.Extensions, ext) >= 0) files.Add(file);
+                // .apk 是给「更新专用仓库」用的（安卓应用内更新从这里取包）
+                if (ext == ".lrc" || ext == ".apk" || Array.IndexOf(LibraryScanner.Extensions, ext) >= 0)
+                    files.Add(file);
             }
             report.AppendLine("本地待处理文件: " + files.Count);
 

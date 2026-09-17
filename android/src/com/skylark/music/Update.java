@@ -10,9 +10,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -20,15 +17,18 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 应用内更新：默认从 GitHub Releases 查最新版并直接下载 APK（在应用里点一下就行，
- * 不用自己去网页下）；如果云盘里放了 Skylark-android-&lt;版本&gt;.apk 也会认。
+ * 应用内更新：从云盘上的**更新专用仓库**里取安装包（和歌曲库是两个仓库）。
+ * 安装包按 Skylark-android-&lt;版本&gt;.apk 命名，谁新就用谁。
  * 装完（或者放弃更新）会把下载下来的安装包删掉。
  */
 public class Update {
 
-    private static final String LATEST_RELEASE =
-            "https://api.github.com/repos/G336ncx-bjx/skylark-music/releases/latest";
-    private static final String ASSET_NAME = "Skylark-android.apk";
+    /**
+     * 更新专用仓库（云盘里名字叫 apk 的那个资料库）的 API 令牌。
+     * 它只对这个仓库有权限，和歌曲库无关；即使有人拿到它往仓库里塞别的包，
+     * Android 也会因为签名不同拒绝安装，装不上来。
+     */
+    public static final String UPDATE_ENDPOINT = "ee8dab6377ad2ff15f871e45dc4b6500c003b49b";
 
     /** 云盘上更新包的名字：Skylark-android-3.3.8.apk */
     private static final Pattern NAME =
@@ -46,31 +46,9 @@ public class Update {
         public long size;
     }
 
-    /** 从 GitHub Releases 查最新版：读 tag_name，并挑出 APK 资产。 */
-    public static Found fromGitHub() throws IOException {
-        String json = Util.getString(LATEST_RELEASE,
-                new String[] { "Accept: application/vnd.github+json" });
-        Found f = new Found();
-        try {
-            JSONObject o = new JSONObject(json);
-            String tag = o.optString("tag_name", "").trim();
-            f.version = (tag.startsWith("v") || tag.startsWith("V")) ? tag.substring(1) : tag;
-            JSONArray assets = o.optJSONArray("assets");
-            for (int i = 0; assets != null && i < assets.length(); i++) {
-                JSONObject a = assets.optJSONObject(i);
-                if (a == null) continue;
-                if (ASSET_NAME.equalsIgnoreCase(a.optString("name"))) {
-                    f.url = a.optString("browser_download_url");
-                    f.size = a.optLong("size");
-                }
-            }
-        } catch (Exception e) {
-            throw new IOException("解析 Release 信息失败");
-        }
-        if (f.version.length() == 0 || f.url == null || f.url.length() == 0) {
-            throw new IOException("这个 Release 里没有 " + ASSET_NAME);
-        }
-        return f;
+    /** 去更新仓库里看看有没有比当前版本新的安装包。 */
+    public static Found check() throws IOException {
+        return findNewer(Cloud.listAll(UPDATE_ENDPOINT), MainActivity.VERSION);
     }
 
     /** 在云盘文件列表里找比当前版本更新的安装包，有多个就取版本最高的那个。 */
