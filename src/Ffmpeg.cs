@@ -18,7 +18,8 @@ namespace Skylark
         public static bool NeedsTranscode(string path)
         {
             string ext = Path.GetExtension(path).ToLowerInvariant();
-            return ext == ".ogg" || ext == ".opus" || ext == ".ape" || ext == ".wv";
+            return ext == ".ogg" || ext == ".oga" || ext == ".opus"
+                || ext == ".ape" || ext == ".wv";
         }
 
         /// <summary>查找 ffmpeg：先看设置，再看 PATH，再看几个常见安装位置。</summary>

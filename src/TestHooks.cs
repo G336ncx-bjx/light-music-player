@@ -78,7 +78,7 @@ namespace Skylark
             };
 
             library = new List<Song>();
-            if (string.IsNullOrEmpty(settings.MusicDir)) settings.MusicDir = "D:\\Lai Siyu\\music";
+            if (string.IsNullOrEmpty(settings.MusicDir)) settings.MusicDir = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
             for (int i = 0; i < titles.Length; i++)
             {
                 Song song = new Song();

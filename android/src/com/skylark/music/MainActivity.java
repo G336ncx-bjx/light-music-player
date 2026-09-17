@@ -59,10 +59,11 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.2.11";
+    public static final String VERSION = "3.3.0";
 
-    private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma" };
-    private static final String[] IGNORED_EXT = { "flac", "ogg", "opus", "ape", "wv", "aif", "aiff", "mp4", "mkv", "avi", "m4v" };
+    /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
+    private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
+    private static final String[] IGNORED_EXT = { "ape", "wv", "aif", "aiff", "mp4", "mkv", "avi", "m4v" };
 
     /** 重建界面（换主题）后回到原来的标签页。 */
     private static int lastTab = 0;

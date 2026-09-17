@@ -136,7 +136,7 @@ namespace Skylark
             Check("歌词：纯文本歌词", !plain.Synced && plain.Lines.Count == 2, plain.Lines.Count + " 行");
 
             // 用真实的音乐目录做一次批量解析
-            string dir = "D:\\Lai Siyu\\music";
+            string dir = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
             if (!Directory.Exists(dir)) return;
             string[] files = Directory.GetFiles(dir, "*.lrc");
             int ok = 0;
@@ -196,7 +196,7 @@ namespace Skylark
 
         private static void TestDuration()
         {
-            string dir = "D:\\Lai Siyu\\music";
+            string dir = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
             string[] files = Directory.Exists(dir) ? Directory.GetFiles(dir, "*.mp3") : new string[0];
             if (files.Length == 0)
             {
@@ -269,7 +269,7 @@ namespace Skylark
         /// <summary>真实调用播放内核：打开文件、播放、跳转。</summary>
         private static void TestPlayback()
         {
-            string dir = "D:\\Lai Siyu\\music";
+            string dir = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
             string[] files = Directory.Exists(dir) ? Directory.GetFiles(dir, "*.mp3") : new string[0];
             if (files.Length == 0)
             {
@@ -349,6 +349,20 @@ namespace Skylark
             ScanResult deep = LibraryScanner.Scan(dir, true, null, null);
             Check("扫描：非递归", flat.Songs.Count == 1, flat.Songs.Count + " 首");
             Check("扫描：递归子目录", deep.Songs.Count == 2, deep.Songs.Count + " 首");
+
+            // 格式白名单：自带的能放 flac / aiff，这些都要能扫进来；
+            // 完全不支持的（比如 .mpc）跳过并计数
+            string fmt = Path.Combine(Path.GetTempPath(), "skylark-format");
+            if (Directory.Exists(fmt)) Directory.Delete(fmt, true);
+            Directory.CreateDirectory(fmt);
+            File.WriteAllText(Path.Combine(fmt, "无损 - 甲.flac"), "dummy");
+            File.WriteAllText(Path.Combine(fmt, "苹果 - 乙.aiff"), "dummy");
+            File.WriteAllText(Path.Combine(fmt, "网络 - 丙.ogg"), "dummy");
+            File.WriteAllText(Path.Combine(fmt, "冷门 - 丁.mpc"), "dummy");
+            ScanResult formats = LibraryScanner.Scan(fmt, false, null, null);
+            Check("扫描：flac / aiff / ogg 都进库", formats.Songs.Count == 3, formats.Songs.Count + " 首");
+            Check("扫描：不支持的格式计入忽略", formats.SkippedUnsupported == 1,
+                formats.SkippedUnsupported + " 个");
             if (flat.Songs.Count > 0)
             {
                 Check("扫描：关联歌词", flat.Songs[0].HasLyrics, flat.Songs[0].LyricPath);

@@ -18,6 +18,8 @@ namespace Skylark
         private readonly Button headTitle = new Button();
         private readonly Button headArtist = new Button();
         private readonly Border emptyState = new Border();
+        /** 列头所在的那一行：它的右边距要跟列表的实际可视宽度对齐（滚动条会占掉十几个像素）。 */
+        private readonly Grid columns = new Grid();
 
         public LibraryView(MainWindow owner)
         {
@@ -59,7 +61,6 @@ namespace Skylark
             root.Children.Add(headRow);
 
             // 列头
-            Grid columns = new Grid();
             columns.Margin = new Thickness(10, 0, 22, 2);
             columns.ColumnDefinitions.Add(new ColumnDefinition());
             columns.ColumnDefinitions[0].Width = Ui.Px(56);
@@ -67,6 +68,8 @@ namespace Skylark
             columns.ColumnDefinitions[1].Width = Ui.Stars(1);
             columns.ColumnDefinitions.Add(new ColumnDefinition());
             columns.ColumnDefinitions[2].Width = Ui.Px(190);
+            columns.ColumnDefinitions.Add(new ColumnDefinition());
+            columns.ColumnDefinitions[3].Width = Ui.Px(40);
 
             Style headerStyle = (Style)Application.Current.Resources["ColumnHeader"];
             SetupHeader(headIndex, "序号", headerStyle, SortField.Default);
@@ -99,6 +102,10 @@ namespace Skylark
             list.KeyDown += OnKeyDown;
             Grid.SetRow(list, 2);
             root.Children.Add(list);
+            // 列表里有滚动条时可视宽度会窄十几个像素，列头要跟着缩，否则「歌手」会和下面的内容错位
+            list.SizeChanged += delegate { SyncHeaderInset(); };
+            list.Loaded += delegate { SyncHeaderInset(); };
+            list.ItemContainerGenerator.StatusChanged += delegate { SyncHeaderInset(); };
 
             // 空状态
             emptyState.Visibility = Visibility.Collapsed;
@@ -148,6 +155,42 @@ namespace Skylark
             main.ApplyFilter();
             main.SaveSettings();
             UpdateHeaderArrows();
+        }
+
+        /// <summary>
+        /// 列头对齐列表：列表内部有滚动条时可视宽度会小十几像素，
+        /// 列头就按这个差值缩右边距，保证「歌手」和下面每一行的歌手名在同一个 x 上。
+        /// </summary>
+        private void SyncHeaderInset()
+        {
+            if (columns == null || list == null || list.ActualWidth <= 0) return;
+            ScrollViewer viewer = FindScrollViewer(list);
+            double inset = 0;
+            if (viewer != null && viewer.ViewportWidth > 0)
+                inset = Math.Max(0, list.ActualWidth - viewer.ViewportWidth);
+            if (inset <= 0 && list.Items.Count > 0)
+            {
+                // 视觉树还没建好时退一步：用第一个可见项的实际宽度反推滚动条占了多少
+                FrameworkElement first = list.ItemContainerGenerator.ContainerFromIndex(0) as FrameworkElement;
+                if (first != null && first.ActualWidth > 0 && list.ActualWidth > first.ActualWidth)
+                    inset = list.ActualWidth - first.ActualWidth;
+            }
+            columns.Margin = new Thickness(10, 0, 10 + inset, 2);
+        }
+
+        private static ScrollViewer FindScrollViewer(DependencyObject root)
+        {
+            if (root == null) return null;
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                ScrollViewer viewer = child as ScrollViewer;
+                if (viewer != null) return viewer;
+                ScrollViewer nested = FindScrollViewer(child);
+                if (nested != null) return nested;
+            }
+            return null;
         }
 
         private void UpdateHeaderArrows()

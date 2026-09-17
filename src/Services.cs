@@ -799,11 +799,17 @@ namespace Skylark
     public static class LibraryScanner
     {
         public static readonly string[] Extensions =
-            new string[] { ".mp3", ".wav", ".m4a", ".aac", ".wma" };
+            new string[]
+            {
+                // Windows 10/11 自带内核直接能放的
+                ".mp3", ".wav", ".m4a", ".aac", ".wma", ".flac", ".aiff", ".aif",
+                // 需要 ffmpeg 转码才能放的（设置里可以指定 ffmpeg 路径，没装就给提示）
+                ".ogg", ".oga", ".opus", ".ape", ".wv"
+            };
 
-        /// <summary>能识别但不再支持的音频格式（扫描时跳过，并给用户提示）。</summary>
+        /// <summary>认识的音频格式，但两端都不支持播放（扫描时跳过并计数）。</summary>
         public static readonly string[] UnsupportedExtensions =
-            new string[] { ".flac", ".ogg", ".opus", ".ape", ".wv", ".aif", ".aiff" };
+            new string[] { ".mpc", ".tta", ".dsf", ".dff", ".amr" };
 
         public static ScanResult Scan(string dir, bool recursive, List<DurationEntry> cache, List<string> hidden)
         {

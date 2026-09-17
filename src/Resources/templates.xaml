@@ -9,7 +9,7 @@
                 <ColumnDefinition Width="56" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="190" />
-                <ColumnDefinition Width="58" />
+                <ColumnDefinition Width="40" />
             </Grid.ColumnDefinitions>
 
             <Grid Grid.Column="0">
@@ -27,16 +27,18 @@
                 <TextBlock x:Name="title" Grid.Column="0" Text="{Binding Title}" FontSize="13.5"
                            Foreground="{DynamicResource Text}" TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center" />
-                <Border x:Name="lyricBadge" Grid.Column="2" Background="{DynamicResource AccentSoft}"
-                        CornerRadius="4" Padding="5,1,5,1" Margin="8,0,0,0" VerticalAlignment="Center"
-                        Visibility="Collapsed">
-                    <TextBlock Text="词" FontSize="10" Foreground="{DynamicResource Accent}" />
-                </Border>
             </Grid>
 
             <TextBlock Grid.Column="2" Text="{Binding ArtistText}" FontSize="12.5"
                        Foreground="{DynamicResource TextDim}" TextTrimming="CharacterEllipsis"
-                       VerticalAlignment="Center" Margin="0,0,12,0" />
+                       VerticalAlignment="Center" Margin="0,0,10,0" />
+
+            <!-- 「有歌词」徽标放在最右边单独一列，免得贴在歌手名前看着像错位 -->
+            <Border x:Name="lyricBadge" Grid.Column="3" Background="{DynamicResource AccentSoft}"
+                    CornerRadius="4" Padding="5,1,5,1" VerticalAlignment="Center"
+                    HorizontalAlignment="Right" Visibility="Collapsed">
+                <TextBlock Text="词" FontSize="10" Foreground="{DynamicResource Accent}" />
+            </Border>
 
         </Grid>
         <DataTemplate.Triggers>
