@@ -108,26 +108,63 @@ public class Lrc {
             else if ("zh".equals(kind)) zh++;
             else latin++;
         }
-        String original = pickOriginalLanguage(titleTag, scriptOf(lines.get(0).text), zh, ja, latin, lines.size());
+        // 第一行往往是「作词 : 某某」这类信息行，判断语言要用第一句真正的歌词
+        String firstLyric = null;
+        for (int i = 0; i < lines.size(); i++) {
+            if (isMetadataLine(lines.get(i).text)) continue;
+            firstLyric = lines.get(i).text;
+            break;
+        }
+        if (firstLyric == null) firstLyric = lines.get(0).text;
+        String original = pickOriginalLanguage(titleTag, scriptOf(firstLyric), zh, ja, latin, lines.size());
 
         List<Line> result = new ArrayList<Line>();
         Line pending = null;
         for (int i = 0; i < lines.size(); i++) {
             Line line = lines.get(i);
+            // 「词：/曲：/Lyrics by」这类信息行不参与配对，否则会把整首错开一行
+            if (isMetadataLine(line.text)) {
+                result.add(line);
+                continue;
+            }
             if (scriptOf(line.text).equals(original)) {
                 result.add(line);
                 pending = line;
                 continue;
             }
+            // 依据是位置：译文永远紧跟在它自己的原文之后（同一首歌里译文可能中文、英文混着来）。
+            // 时间差只做很宽松的保险：长间奏会让两者相隔十几秒。
             if (pending != null && pending.translation.length() == 0
-                    && line.time - pending.time <= 15.0) {
+                    && line.time - pending.time <= 60.0) {
                 pending.translation = line.text;
                 pending = null;
                 continue;
             }
+            // 配不上就别当译文了，自己当原文（日语歌里「絶対徹夜」这类纯汉字行会被判成中文，
+            // 但它其实是原文；当成原文后，紧跟的那句中文译文才能配到它）
             result.add(line);
+            pending = line;
         }
         return result;
+    }
+
+    private static final String[] METADATA_PREFIXES = {
+        "词:", "曲:", "编曲:", "作词:", "作曲:", "制作:", "制作人:", "混音:", "母带:", "录音:",
+        "吉他:", "贝斯:", "鼓:", "键盘:", "和声:", "演唱:", "出品:", "监制:", "op:", "sp:",
+        "lyrics by", "composed by", "music by", "written by", "produced by", "arranged by",
+        "mixed by", "mastered by", "vocals by", "guitar by", "bass by"
+    };
+
+    /** 「词：/曲：/Lyrics by」这类信息行：不参与双语配对，单独成行。 */
+    private static boolean isMetadataLine(String text) {
+        if (text == null) return false;
+        // 冒号前后的空格一起吃掉：「作词 : 某某」也算信息行
+        String t = text.trim().replace('：', ':').toLowerCase(java.util.Locale.ROOT);
+        t = t.replaceAll("\\s*:\\s*", ":");
+        for (int i = 0; i < METADATA_PREFIXES.length; i++) {
+            if (t.startsWith(METADATA_PREFIXES[i])) return true;
+        }
+        return false;
     }
 
     /** 哪种文字是原文：优先标题语言 → 第一行语言（占比 ≥ 1/4）→ 多数派。 */

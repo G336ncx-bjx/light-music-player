@@ -221,6 +221,20 @@ public class Cloud {
     }
 
     public static void upload(String endpoint, File file, String dir, Util.Progress p) throws IOException {
+        // 令牌模式下先把同名旧文件删掉：upload-api 不认 replace=1，遇到同名只会默默改名成
+        // 「xxx (1).ext」，直接传会出现一堆副本。
+        String targetDir = (dir == null || dir.length() == 0) ? "/" : dir;
+        if (isToken(endpoint)) {
+            String existing = findSameName(endpoint, targetDir, file.getName());
+            if (existing != null) {
+                delete(endpoint, existing);
+                try {
+                    Thread.sleep(900);   // 等服务器删干净，避免又撞名
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
         String link = uploadLink(endpoint, dir) + "?ret-json=1";
         try {
             Util.upload(link, dir, file, p);
@@ -232,6 +246,24 @@ public class Cloud {
             }
             throw e;
         }
+    }
+
+    /** 云端指定目录里是否已有同名文件，有就返回它的完整路径。 */
+    private static String findSameName(String endpoint, String dir, String name) {
+        try {
+            for (Entry entry : listAll(endpoint)) {
+                if (entry.dir) continue;
+                if (!entry.name.equals(name)) continue;
+                String parent = "/";
+                int slash = entry.path.lastIndexOf('/');
+                if (slash > 0) parent = entry.path.substring(0, slash);
+                String want = dir.equals("/") ? "/" : (dir.endsWith("/") ? dir.substring(0, dir.length() - 1) : dir);
+                if (parent.equals(want)) return entry.path;
+            }
+        } catch (Exception e) {
+            // 查不到就当没有，交给上传本身处理
+        }
+        return null;
     }
 
     public static boolean canDelete(String endpoint) {

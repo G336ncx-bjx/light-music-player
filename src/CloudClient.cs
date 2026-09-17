@@ -417,26 +417,100 @@ namespace Skylark
         {
             replaced = false;
             string link = GetUploadUrl(urlOrToken, dirPath);
+            string targetDir = string.IsNullOrEmpty(dirPath) ? "/" : dirPath;
+            string targetName = Path.GetFileName(localFilePath);
+
+            // 令牌模式下先把同名旧文件删掉：upload-api 不认 replace=1，遇到同名只会默默改名成
+            // 「xxx (1).ext」，直接传会出现一堆副本。
+            if (IsApiToken(urlOrToken) && CloudHasFile(urlOrToken.Trim(), targetDir, targetName))
+            {
+                DeleteFiles(urlOrToken.Trim(), targetDir, new List<string>(new string[] { targetName }));
+                System.Threading.Thread.Sleep(900);   // 等服务器那边删干净，避免又撞名
+                replaced = true;
+            }
+
             string result;
-            bool ok = TryUpload(link, localFilePath, dirPath, progress, false, out result);
-            if (ok) return true;
+            bool ok = TryUpload(link, localFilePath, dirPath, progress, out result);
+            if (ok && NameMatches(result, localFilePath)) return true;
+
+            // 服务器遇到同名文件会「默默改名」成 xxx (1).ext（upload-api 不认 replace=1），
+            // 所以发现名字被改了：删掉刚传上去的副本和原来那个同名文件，再传一次。
+            if (ok)
+            {
+                string uploaded = UploadedName(result);
+                bool canDelete = IsApiToken(urlOrToken);
+                if (canDelete && !string.IsNullOrEmpty(uploaded))
+                {
+                    DeleteFiles(urlOrToken.Trim(), string.IsNullOrEmpty(dirPath) ? "/" : dirPath,
+                        new List<string>(new string[] { uploaded, Path.GetFileName(localFilePath) }));
+                    ok = TryUpload(link, localFilePath, dirPath, progress, out result);
+                    replaced = ok;
+                    if (ok) return true;
+                }
+            }
+            if (!ok && result == null) result = "上传失败";
 
             if (result != null && (result.IndexOf("exist", StringComparison.OrdinalIgnoreCase) >= 0
                 || result.IndexOf("already", StringComparison.OrdinalIgnoreCase) >= 0))
             {
-                ok = TryUpload(link, localFilePath, dirPath, progress, true, out result);
+                ok = TryUpload(link, localFilePath, dirPath, progress, out result);
                 replaced = ok;
             }
             if (!ok) throw new InvalidOperationException(Shorten(result));
             return true;
         }
 
+        /// <summary>上传接口的返回里带着服务器实际保存的文件名。</summary>
+        private static string UploadedName(string body)
+        {
+            if (string.IsNullOrEmpty(body)) return null;
+            int at = body.IndexOf("\"name\"", StringComparison.OrdinalIgnoreCase);
+            if (at < 0) return null;
+            int colon = body.IndexOf(':', at);
+            if (colon < 0) return null;
+            int start = body.IndexOf('"', colon + 1);
+            if (start < 0) return null;
+            int end = body.IndexOf('"', start + 1);
+            if (end < 0) return null;
+            return body.Substring(start + 1, end - start - 1);
+        }
+
+        /// <summary>服务器返回的名字和我们传的名字是否一致（不一致说明被改名了）。</summary>
+        /// <summary>云端指定目录里是否已经有这个文件名的文件。</summary>
+        private static bool CloudHasFile(string token, string dir, string name)
+        {
+            try
+            {
+                foreach (CloudEntry entry in ListAllFiles(token, 4))
+                {
+                    if (entry.IsDirectory) continue;
+                    if (!string.Equals(entry.Name, name, StringComparison.Ordinal)) continue;
+                    string parent = entry.Path == null ? "/" : entry.Path;
+                    int slash = parent.LastIndexOf('/');
+                    parent = slash > 0 ? parent.Substring(0, slash) : "/";
+                    string want = string.IsNullOrEmpty(dir) || dir == "/" ? "/" : dir.TrimEnd('/');
+                    if (string.Equals(parent, want, StringComparison.Ordinal)) return true;
+                }
+            }
+            catch (Exception)
+            {
+                // 查不到就当没有，交给上传本身去处理
+            }
+            return false;
+        }
+
+        private static bool NameMatches(string body, string localFilePath)
+        {
+            string uploaded = UploadedName(body);
+            if (string.IsNullOrEmpty(uploaded)) return true;   // 没解析出来就不折腾
+            return string.Equals(uploaded, Path.GetFileName(localFilePath), StringComparison.Ordinal);
+        }
+
         private static bool TryUpload(string uploadLink, string localFilePath, string dirPath,
-            Action<long, long> progress, bool replace, out string error)
+            Action<long, long> progress, out string error)
         {
             error = null;
             string url = uploadLink + "?ret-json=1";
-            if (replace) url += "&replace=1";
 
             string boundary = "----Skylark" + Guid.NewGuid().ToString("N");
             string fileName = Path.GetFileName(localFilePath);

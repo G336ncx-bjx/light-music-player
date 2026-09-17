@@ -68,6 +68,12 @@ namespace Skylark
                 Environment.Exit(LyricDump(args.Length > 1 ? args[1] : null));
                 return;
             }
+            if (args.Length > 0 && args[0] == "--lyricfix")
+            {
+                AttachConsole();
+                Environment.Exit(LyricFix(args.Length > 1 ? args[1] : null));
+                return;
+            }
             if (args.Length > 0 && args[0] == "--cloudtest")
             {
                 AttachConsole();
@@ -341,6 +347,54 @@ namespace Skylark
                 Console.WriteLine("lyricdump failed: " + ex.Message);
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// 把双语歌词规范化成「译文与原文同一时间戳」的写法（就地改写）。
+        /// 可以传单个 .lrc，也可以传目录（递归处理）。
+        /// </summary>
+        private static int LyricFix(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                Console.WriteLine("usage: Skylark.exe --lyricfix <歌词文件或目录>");
+                return 1;
+            }
+            List<string> files = new List<string>();
+            if (System.IO.Directory.Exists(path))
+            {
+                files.AddRange(System.IO.Directory.GetFiles(path, "*.lrc", System.IO.SearchOption.AllDirectories));
+            }
+            else if (System.IO.File.Exists(path))
+            {
+                files.Add(path);
+            }
+            else
+            {
+                Console.WriteLine("找不到：" + path);
+                return 1;
+            }
+            files.Sort(StringComparer.OrdinalIgnoreCase);
+
+            int changed = 0;
+            foreach (string file in files)
+            {
+                try
+                {
+                    string original = TextUtil.ReadAllTextSmart(file);
+                    string fixedText = LrcParser.Normalize(original);
+                    if (string.Equals(original, fixedText, StringComparison.Ordinal)) continue;
+                    System.IO.File.WriteAllText(file, fixedText, new UTF8Encoding(false));
+                    changed++;
+                    Console.WriteLine("  已规范化：" + System.IO.Path.GetFileName(file));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("  失败 " + System.IO.Path.GetFileName(file) + "：" + ex.Message);
+                }
+            }
+            Console.WriteLine("共 " + files.Count + " 个歌词文件，改写了 " + changed + " 个");
+            return 0;
         }
 
         private static int StreamTest(string url)

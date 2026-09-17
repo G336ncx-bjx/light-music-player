@@ -370,6 +370,63 @@ namespace Skylark
         }
 
         /// <summary>
+        /// 把歌词规范化成「译文与原文同一时间戳」的标准写法：每个原文行后面紧跟一行同时间戳的译文。
+        /// 双语歌词的两种常见写法（译文同时间戳 / 译文带着下一句的时间戳）都会被整理成同一种，
+        /// 这样两端播放器都不需要再猜配对关系。
+        /// </summary>
+        public static string Normalize(string text)
+        {
+            if (text == null) return "";
+            string newline = text.Contains("\r\n") ? "\r\n" : "\n";
+
+            // 保留开头的元数据行（[ti:] / [ar:] / [al:] / [by:] / [offset:] / [ml:] …），它们没有时间戳
+            List<string> headers = new List<string>();
+            string[] rows = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            foreach (string row in rows)
+            {
+                string raw = row.Trim();
+                if (raw.Length == 0 || raw[0] != '[') continue;
+                int end = raw.IndexOf(']');
+                if (end <= 1) continue;
+                string tag = raw.Substring(1, end - 1);
+                if (tag.IndexOf(':') > 0)
+                {
+                    string head = tag.Substring(0, tag.IndexOf(':'));
+                    double ignored;
+                    bool isTime = head.Length > 0 && char.IsDigit(head[0]) && TryParseTimeTag(tag, out ignored);
+                    if (!isTime && headers.IndexOf(raw) < 0) headers.Add(raw);
+                }
+            }
+
+            LyricDocument doc = Parse(text);
+            StringBuilder sb = new StringBuilder();
+            foreach (string header in headers) sb.Append(header).Append(newline);
+            foreach (LyricLine line in doc.Lines)
+            {
+                if (line.Time < 0)
+                {
+                    sb.Append(line.Text).Append(newline);   // 纯文本歌词
+                    continue;
+                }
+                string stamp = "[" + FormatStamp(line.Time) + "]";
+                sb.Append(stamp).Append(line.Text).Append(newline);
+                if (!string.IsNullOrEmpty(line.Translation))
+                    sb.Append(stamp).Append(line.Translation).Append(newline);
+            }
+            return sb.ToString();
+        }
+
+        private static string FormatStamp(double seconds)
+        {
+            if (seconds < 0) seconds = 0;
+            int total = (int)Math.Floor(seconds);
+            int minutes = total / 60;
+            double rest = seconds - minutes * 60;
+            return minutes.ToString("00", CultureInfo.InvariantCulture) + ":"
+                 + rest.ToString("00.00", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
         /// 双语歌词配对。两种常见写法都要照顾：
         ///   A) 原文与译文同一时间戳（原文在前、译文在后）；
         ///   B) 译文紧跟在原文之后，但时间戳被标成了下一句的时间
@@ -392,32 +449,53 @@ namespace Skylark
                 else latin++;
             }
 
-            string original = PickOriginalLanguage(titleTag, ScriptOf(lines[0].Text),
+            // 第一行往往是「作词 : 某某」这类信息行，判断语言要用第一句真正的歌词
+            string firstLyric = null;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (IsMetadataLine(lines[i].Text)) continue;
+                firstLyric = lines[i].Text;
+                break;
+            }
+            if (firstLyric == null) firstLyric = lines[0].Text;
+            string original = PickOriginalLanguage(titleTag, ScriptOf(firstLyric),
                 zh, ja, latin, lines.Count);
-
             List<LyricLine> result = new List<LyricLine>();
             LyricLine pending = null;   // 还没配到译文的原文
             for (int i = 0; i < lines.Count; i++)
             {
                 LyricLine line = lines[i];
+                // 「词：/曲：/Lyrics by」这类信息行不参与配对，
+                // 否则它们会把整首歌词的原文/译文错开一行
+                if (IsMetadataLine(line.Text))
+                {
+                    result.Add(line);
+                    continue;
+                }
                 if (ScriptOf(line.Text) == original)
                 {
                     result.Add(line);
                     pending = line;
                     continue;
                 }
-                // 译文：贴到上一句原文上（时间差太大就不硬配，免得张冠李戴）
+                // 译文：贴到上一句原文上。判断依据是「位置」——译文永远紧跟在它自己的原文之后，
+                // 所以任何非原文语言的行都算译文（同一首歌里译文可能中文、英文混着来）。
+                // 时间差只做一个很宽松的保险：长间奏会让两者相隔十几秒（实测有 16 秒的）。
                 if (pending != null && string.IsNullOrEmpty(pending.Translation)
-                    && line.Time - pending.Time <= 15.0)
+                    && line.Time - pending.Time <= 60.0)
                 {
                     pending.Translation = line.Text;
                     pending = null;
                     continue;
                 }
+                // 配不上就别当译文了，自己当原文（例如日语歌里「絶対徹夜」这种纯汉字行会被判成中文，
+                // 但它其实是原文；当成原文后，紧跟的「绝对要熬夜了」才能配到它）
                 result.Add(line);
+                pending = line;
             }
             return result;
         }
+
 
         /// <summary>粗略判断一行歌词属于哪种文字：ja 含假名 / zh 只有汉字 / latin 其它。</summary>
         /// <summary>
@@ -446,6 +524,28 @@ namespace Skylark
             if (kind == "ja") return ja;
             if (kind == "zh") return zh;
             return latin;
+        }
+
+        private static readonly string[] MetadataPrefixes = new string[]
+        {
+            "词:", "曲:", "编曲:", "作词:", "作曲:", "制作:", "制作人:", "混音:", "母带:", "录音:",
+            "吉他:", "贝斯:", "鼓:", "键盘:", "和声:", "演唱:", "出品:", "监制:", "op:", "sp:",
+            "lyrics by", "composed by", "music by", "written by", "produced by", "arranged by",
+            "mixed by", "mastered by", "vocals by", "guitar by", "bass by"
+        };
+
+        /// <summary>「词：/曲：/Lyrics by」这类信息行：不参与双语配对，单独成行。</summary>
+        private static bool IsMetadataLine(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            // 冒号前后的空格一起吃掉：「作词 : 某某」也算信息行
+            string t = text.Trim().Replace('：', ':').ToLowerInvariant();
+            t = System.Text.RegularExpressions.Regex.Replace(t, @"\s*:\s*", ":");
+            for (int i = 0; i < MetadataPrefixes.Length; i++)
+            {
+                if (t.StartsWith(MetadataPrefixes[i], StringComparison.Ordinal)) return true;
+            }
+            return false;
         }
 
         private static string ScriptOf(string text)

@@ -126,7 +126,8 @@ public class Store {
     public static File lyricCacheFile(Context c, Song song) {
         File dir = new File(cacheDir(c), "lyrics");
         if (!dir.exists()) dir.mkdirs();
-        return new File(dir, hash(song.cloudPath) + ".lrc");
+        // 前缀 l2-：云端歌词格式更新过（译文与原文改成同一时间戳），老缓存直接作废重取
+        return new File(dir, "l2-" + hash(song.cloudPath) + ".lrc");
     }
 
     // ---------- 按歌曲记的小数据：时长、歌词偏移 ----------
