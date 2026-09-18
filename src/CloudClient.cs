@@ -839,6 +839,15 @@ namespace Skylark
             }
         }
 
+        /// <summary>从云盘路径取出歌单名（根目录下的歌返回空串）。</summary>
+        public static string PlaylistOf(string cloudPath)
+        {
+            if (string.IsNullOrEmpty(cloudPath)) return "";
+            string p = cloudPath.Replace('\\', '/').Trim('/');
+            int slash = p.IndexOf('/');
+            return slash > 0 ? p.Substring(0, slash) : "";
+        }
+
         /// <summary>云盘上某个目录存不存在。</summary>
         public static bool DirExists(string endpoint, string dirPath)
         {

@@ -1117,6 +1117,10 @@ namespace Skylark
                 song.FileName = info.Name;
                 song.Size = info.Length;
                 song.ModifiedTicks = info.LastWriteTimeUtc.Ticks;
+                // 本地这棵树里，子文件夹名就是歌单名（与云盘同一套规则）
+                string relative = file.Substring(dir.Length).TrimStart('\\', '/');
+                int sep = relative.IndexOfAny(new char[] { '\\', '/' });
+                song.Playlist = sep > 0 ? relative.Substring(0, sep) : "";
 
                 string title, artist, album;
                 TextUtil.ParseSongName(Path.GetFileNameWithoutExtension(file), out title, out artist, out album);

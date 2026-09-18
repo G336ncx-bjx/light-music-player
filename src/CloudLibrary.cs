@@ -71,6 +71,7 @@ namespace Skylark
                 song.Artist = artist;
                 song.Album = album;
                 song.Artists = TextUtil.SplitArtists(artist);
+                song.Playlist = CloudClient.PlaylistOf(file.Path);
 
                 CloudEntry lrc;
                 if (lyrics.TryGetValue(ChangeExtension(file.Path, string.Empty), out lrc))

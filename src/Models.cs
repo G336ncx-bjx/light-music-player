@@ -38,6 +38,12 @@ namespace Skylark
         public string Artist { get; set; }
         public List<string> Artists { get; set; }
         public string Album { get; set; }
+
+        /// <summary>
+        /// 所属歌单 = 云盘上这首歌所在的文件夹名（根目录下的歌为空）。
+        /// 一首歌要进两个歌单，就是在两个文件夹里各放一份音频+歌词。
+        /// </summary>
+        public string Playlist { get; set; }
         public string LyricPath { get; set; }
 
         /// <summary>云盘歌曲：扫描时后台拉取的歌词文本。</summary>

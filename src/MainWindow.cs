@@ -36,6 +36,11 @@ namespace Skylark
         private List<Song> library = new List<Song>();
         private List<Song> queue = new List<Song>();
         private List<Song> visible = new List<Song>();
+
+        /// <summary>当前歌单筛选：空串＝全部歌单。</summary>
+        private string playlistFilter = "";
+        private readonly StackPanel playlistNav = new StackPanel();
+        private string playlistSignature = "";
         private int queueIndex = -1;
         private Song currentSong;
         private string searchText = string.Empty;
@@ -138,6 +143,15 @@ namespace Skylark
         public List<Song> Library { get { return library; } }
         public List<Song> Queue { get { return queue; } }
         public List<Song> VisibleSongs { get { return visible; } }
+        public string PlaylistFilter { get { return playlistFilter; } }
+
+        /// <summary>切换歌单筛选（空串＝全部）。</summary>
+        public void SetPlaylistFilter(string name)
+        {
+            playlistFilter = name == null ? "" : name;
+            ApplyFilter();
+            RefreshPlaylists();
+        }
         public int QueueIndex { get { return queueIndex; } }
         public Song CurrentSong { get { return currentSong; } }
         public string SearchText { get { return searchText; } }
@@ -923,6 +937,15 @@ namespace Skylark
             nav.Children.Add(BuildNavItem("settings", "settings", "设置", out unused2));
             grid.Children.Add(nav);
 
+            // 歌单区（云盘上的一个文件夹就是一个歌单）
+            ScrollViewer playlistScroll = new ScrollViewer();
+            playlistScroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+            playlistScroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+            playlistScroll.Content = playlistNav;
+            playlistScroll.Margin = new Thickness(0, 2, 0, 6);
+            Grid.SetRow(playlistScroll, 1);
+            grid.Children.Add(playlistScroll);
+
             Border stats = new Border();
             stats.CornerRadius = new CornerRadius(12);
             stats.Padding = new Thickness(12);
@@ -1618,13 +1641,24 @@ namespace Skylark
         {
             List<Song> list = new List<Song>();
             string key = searchText.Trim().ToLowerInvariant();
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (Song song in library)
             {
+                // 歌单筛选：只在选中的歌单里找
+                if (playlistFilter.Length > 0
+                    && !string.Equals(song.Playlist, playlistFilter, StringComparison.OrdinalIgnoreCase))
+                    continue;
                 if (key.Length == 0
                     || song.Title.ToLowerInvariant().Contains(key)
                     || song.Artist.ToLowerInvariant().Contains(key)
                     || song.FileName.ToLowerInvariant().Contains(key))
                 {
+                    // 「全部」视图里，同一首歌出现在多个歌单时不重复显示（进具体歌单能看到那份拷贝）
+                    if (playlistFilter.Length == 0)
+                    {
+                        string id = song.Title + "\u0001" + song.Artist;
+                        if (!seen.Add(id)) continue;
+                    }
                     list.Add(song);
                 }
             }
@@ -1632,6 +1666,276 @@ namespace Skylark
             visible = list;
             if (libraryView != null) libraryView.RefreshItems();
             if (libraryCountText != null) libraryCountText.Text = library.Count.ToString(CultureInfo.InvariantCulture);
+            RefreshPlaylists();
+        }
+
+        /// <summary>
+        /// 刷新侧栏的歌单列表。歌单＝云盘上的文件夹，所以直接看歌曲的所属文件夹。
+        /// 列表没变化时不做重建，免得每次筛选都闪一下。
+        /// </summary>
+        private void RefreshPlaylists()
+        {
+            List<string> names = new List<string>();
+            for (int i = 0; i < library.Count; i++)
+            {
+                string name = library[i].Playlist;
+                if (!string.IsNullOrEmpty(name) && !names.Contains(name)) names.Add(name);
+            }
+            names.Sort(StringComparer.CurrentCultureIgnoreCase);
+            if (playlistFilter.Length > 0 && !names.Contains(playlistFilter)) playlistFilter = "";
+
+            string signature = playlistFilter + "|" + string.Join("|", names.ToArray());
+            if (signature == playlistSignature) return;
+            playlistSignature = signature;
+
+            playlistNav.Children.Clear();
+            playlistNav.Children.Add(NavHeader("歌单"));
+            playlistNav.Children.Add(PlaylistRow("全部歌单", "", visible.Count));
+            for (int i = 0; i < names.Count; i++)
+            {
+                int count = 0;
+                for (int k = 0; k < library.Count; k++)
+                    if (string.Equals(library[k].Playlist, names[i], StringComparison.OrdinalIgnoreCase)) count++;
+                playlistNav.Children.Add(PlaylistRow(names[i], names[i], count));
+            }
+            Button create = Ui.Button("＋ 新建歌单", "OutlineButton", delegate { NewPlaylist(); });
+            create.Margin = new Thickness(6, 6, 6, 0);
+            playlistNav.Children.Add(create);
+        }
+
+        // ---------------- 歌单（一个云盘文件夹＝一个歌单） ----------------
+
+        /// <summary>在后台执行云盘操作，完成后自动重扫曲库。</summary>
+        private void RunCloudAction(string label, Action work)
+        {
+            ShowToast(label + "…");
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    work();
+                    Dispatcher.BeginInvoke((Action)delegate
+                    {
+                        ShowToast(label + "完成");
+                        Rescan();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.BeginInvoke((Action)delegate { ShowToast(label + "失败：" + ex.Message); });
+                }
+            });
+        }
+
+        private string PlaylistDir(string name)
+        {
+            return "/" + name.Trim().Trim('/');
+        }
+
+        public void NewPlaylist()
+        {
+            string name = PromptText("新建歌单", "歌单名（云盘上会新建一个同名文件夹）", "");
+            if (string.IsNullOrEmpty(name)) return;
+            name = name.Trim();
+            if (name.Length == 0 || name.IndexOfAny(new char[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' }) >= 0)
+            {
+                ShowToast("这个名字不能用在文件夹上");
+                return;
+            }
+            string target = name;
+            RunCloudAction("新建歌单", delegate
+            {
+                if (IsCloudSource) CloudClient.EnsureDir(CloudEndpoint, PlaylistDir(target));
+                else System.IO.Directory.CreateDirectory(System.IO.Path.Combine(settings.MusicDir, target));
+            });
+        }
+
+        public void RenamePlaylist(string oldName)
+        {
+            if (string.IsNullOrEmpty(oldName)) return;
+            string name = PromptText("重命名歌单", "新名字", oldName);
+            if (string.IsNullOrEmpty(name)) return;
+            name = name.Trim();
+            if (name.Length == 0 || name == oldName) return;
+            RunCloudAction("重命名歌单", delegate
+            {
+                if (!IsCloudSource)
+                {
+                    System.IO.Directory.Move(System.IO.Path.Combine(settings.MusicDir, oldName),
+                        System.IO.Path.Combine(settings.MusicDir, name));
+                    return;
+                }
+                CloudClient.EnsureDir(CloudEndpoint, PlaylistDir(name));
+                List<CloudEntry> files = CloudClient.ListAllFiles(CloudEndpoint, 3);
+                List<string> moving = new List<string>();
+                foreach (CloudEntry file in files)
+                {
+                    if (file.IsDirectory) continue;
+                    if (CloudClient.PlaylistOf(file.Path) == oldName) moving.Add(file.Name);
+                }
+                if (moving.Count > 0)
+                    CloudClient.MoveItems(CloudEndpoint, PlaylistDir(oldName), moving, PlaylistDir(name));
+                CloudClient.DeleteFiles(CloudEndpoint, "/", new List<string>(new string[] { oldName }));
+            });
+        }
+
+        public void DeletePlaylist(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return;
+            MessageBoxResult answer = MessageBox.Show(this,
+                "删除歌单「" + name + "」？\n\n" +
+                "歌单就是云盘上的一个文件夹，删除会把里面的音频和歌词一起删掉，\n" +
+                "恢复只能自己去云盘的历史记录里找。",
+                "删除歌单", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (answer != MessageBoxResult.OK) return;
+            RunCloudAction("删除歌单", delegate
+            {
+                if (IsCloudSource) CloudClient.DeleteFiles(CloudEndpoint, "/", new List<string>(new string[] { name }));
+                else System.IO.Directory.Delete(System.IO.Path.Combine(settings.MusicDir, name), true);
+            });
+        }
+
+        /// <summary>把选中的歌复制到某个歌单（一首歌要进两个歌单＝两处各放一份音频+歌词）。</summary>
+        public void AddSongsToPlaylist(List<Song> songs, string target)
+        {
+            if (songs == null || songs.Count == 0 || string.IsNullOrEmpty(target)) return;
+            List<Song> copy = new List<Song>(songs);
+            RunCloudAction("加入歌单", delegate
+            {
+                if (IsCloudSource)
+                {
+                    CloudClient.EnsureDir(CloudEndpoint, PlaylistDir(target));
+                    foreach (Song song in copy)
+                    {
+                        string from = string.IsNullOrEmpty(song.Playlist) ? "/" : PlaylistDir(song.Playlist);
+                        List<string> items = new List<string>();
+                        items.Add(song.FileName);
+                        string lrcName = System.IO.Path.ChangeExtension(song.FileName, ".lrc");
+                        items.Add(lrcName);
+                        try
+                        {
+                            CloudClient.CopyItems(CloudEndpoint, from, items, PlaylistDir(target));
+                        }
+                        catch (Exception)
+                        {
+                            // 没有歌词时会整体失败，退一步只复制音频
+                            CloudClient.CopyItems(CloudEndpoint, from,
+                                new List<string>(new string[] { song.FileName }), PlaylistDir(target));
+                        }
+                    }
+                    return;
+                }
+                foreach (Song song in copy)
+                {
+                    string to = System.IO.Path.Combine(settings.MusicDir, target, song.FileName);
+                    System.IO.File.Copy(song.Path, to, true);
+                    string lrc = System.IO.Path.ChangeExtension(song.Path, ".lrc");
+                    if (System.IO.File.Exists(lrc))
+                        System.IO.File.Copy(lrc, System.IO.Path.ChangeExtension(to, ".lrc"), true);
+                }
+            });
+        }
+
+        /// <summary>选歌单的对话框（「加入歌单」用）。</summary>
+        public string PickPlaylist(List<string> names)
+        {
+            if (names == null || names.Count == 0) return null;
+            Window dialog = new Window();
+            dialog.Title = "加入歌单";
+            dialog.Owner = this;
+            dialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            dialog.Width = 360;
+            dialog.Height = 420;
+            dialog.Background = (Brush)Application.Current.Resources["Window"];
+            dialog.FontFamily = Ui.Font;
+            ListBox box = new ListBox();
+            box.Style = (Style)Application.Current.Resources["SongList"];
+            for (int i = 0; i < names.Count; i++) box.Items.Add(names[i]);
+            if (box.Items.Count > 0) box.SelectedIndex = 0;
+            string picked = null;
+            Button ok = Ui.Button("加入", "PrimaryButton", delegate
+            {
+                picked = box.SelectedItem as string;
+                dialog.Close();
+            });
+            Button cancel = Ui.Button("取消", "OutlineButton", delegate { dialog.Close(); });
+            dialog.Content = Ui.Column(10, Ui.Text("选一个歌单（歌会被复制一份进去）", 12.5, "TextMuted"), box,
+                Ui.Row(8, ok, cancel));
+            dialog.ShowDialog();
+            return picked;
+        }
+
+        /// <summary>极简输入框（新建 / 重命名歌单）。</summary>
+        private string PromptText(string title, string hint, string initial)
+        {
+            Window dialog = new Window();
+            dialog.Title = title;
+            dialog.Owner = this;
+            dialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            dialog.Width = 400;
+            dialog.SizeToContent = SizeToContent.Height;
+            dialog.ResizeMode = ResizeMode.NoResize;
+            dialog.Background = (Brush)Application.Current.Resources["Window"];
+            dialog.FontFamily = Ui.Font;
+            TextBox input = new TextBox();
+            input.Text = initial == null ? "" : initial;
+            input.Style = (Style)Application.Current.Resources["InputBox"];
+            input.SelectAll();
+            string result = null;
+            Button ok = Ui.Button("确定", "PrimaryButton", delegate
+            {
+                result = input.Text;
+                dialog.Close();
+            });
+            Button cancel = Ui.Button("取消", "OutlineButton", delegate { dialog.Close(); });
+            input.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.Key == Key.Enter)
+                {
+                    result = input.Text;
+                    dialog.Close();
+                }
+                else if (e.Key == Key.Escape) dialog.Close();
+            };
+            dialog.Content = Ui.Column(10, Ui.Text(hint, 12.5, "TextMuted"), input, Ui.Row(8, ok, cancel));
+            dialog.Loaded += delegate { input.Focus(); };
+            dialog.ShowDialog();
+            return result;
+        }
+
+        private UIElement NavHeader(string text)
+        {
+            TextBlock t = Ui.Text(text, 11.5, "TextMuted");
+            t.Margin = new Thickness(12, 14, 6, 4);
+            return t;
+        }
+
+        /// <summary>侧栏的歌单行：点一下把音乐库筛到这个歌单。</summary>
+        private UIElement PlaylistRow(string label, string value, int count)
+        {
+            ToggleButton toggle = new ToggleButton();
+            toggle.Style = (Style)Application.Current.Resources["NavToggle"];
+            StackPanel row = Ui.Row(0, Icons.Create(value.Length == 0 ? "library" : "music", 16, "TextDim"));
+            TextBlock name = Ui.Text(label, 13, "Text");
+            name.Margin = new Thickness(10, 0, 0, 0);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            row.Children.Add(name);
+            if (count >= 0)
+            {
+                TextBlock number = Ui.Text(count.ToString(CultureInfo.InvariantCulture), 11.5, "TextMuted");
+                number.Margin = new Thickness(8, 0, 0, 0);
+                row.Children.Add(number);
+            }
+            toggle.Content = row;
+            toggle.IsChecked = playlistFilter == value;
+            string captured = value;
+            toggle.Click += delegate
+            {
+                ShowView("library");
+                SetPlaylistFilter(captured);
+            };
+            toggle.Margin = new Thickness(0, 1, 0, 1);
+            return toggle;
         }
 
         private void SortSongs(List<Song> list)
