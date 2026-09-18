@@ -52,12 +52,16 @@ namespace Skylark
 
         private int activeIndex = -1;
         private bool scrollingByCode;
+        /// <summary>
+        /// 是否跟随正在唱的那一句自动滚动。用户手动滑动歌词时会关掉，
+        /// 之后每一句都不再把他拽回去；点「回到当前歌词」或点某一句才恢复。
+        /// </summary>
+        private bool followActive = true;
         private DateTime lastProgrammaticScroll = DateTime.MinValue;
         private DispatcherTimer scrollTimer;
         private double scrollFrom;
         private double scrollTo;
         private int scrollStep;
-        private DispatcherTimer manualTimer;
         private bool synced;
 
         public LyricsView(MainWindow owner)
@@ -255,6 +259,7 @@ namespace Skylark
             backButton.Visibility = Visibility.Collapsed;
             backButton.Click += delegate
             {
+                followActive = true;
                 backButton.Visibility = Visibility.Collapsed;
                 ScrollToActive(true);
             };
@@ -417,8 +422,12 @@ namespace Skylark
                 lineTexts[activeIndex].FontWeight = FontWeights.SemiBold;
                 lineTexts[activeIndex].FontSize = size * 1.1;
                 lineTexts[activeIndex].SetResourceReference(TextBlock.ForegroundProperty, "Text");
-                backButton.Visibility = Visibility.Collapsed;
-                ScrollToActive(true);
+                if (followActive)
+                {
+                    backButton.Visibility = Visibility.Collapsed;
+                    ScrollToActive(true);
+                }
+                // 手动翻歌词时保持用户的位置，不再自动滚回当前句
             }
             UpdateLineOpacities();
         }
@@ -465,6 +474,7 @@ namespace Skylark
             lineTexts.Clear();
             lyricsPanel.Children.Clear();
             activeIndex = -1;
+            followActive = true;
             backButton.Visibility = Visibility.Collapsed;
 
             songTitle.Text = song == null ? "未在播放" : song.Title;
@@ -547,6 +557,9 @@ namespace Skylark
                 item.MouseLeftButtonUp += delegate
                 {
                     if (!synced || captured.Time < 0) return;
+                    // 点某一句＝跳过去听，顺便恢复自动跟随
+                    followActive = true;
+                    backButton.Visibility = Visibility.Collapsed;
                     main.SeekTo(captured.Time - main.Settings.LyricOffset);
                 };
 
@@ -591,29 +604,14 @@ namespace Skylark
             if (scrollingByCode) return;
             if ((DateTime.Now - lastProgrammaticScroll).TotalMilliseconds < 250) return;
             if (Math.Abs(e.VerticalChange) < 0.5) return;
+            // 用户自己滚动了：暂停自动跟随，并给一个「回到当前歌词」的入口
+            followActive = false;
             backButton.Visibility = Visibility.Visible;
-            RestartManualTimer();
-        }
-
-        private void RestartManualTimer()
-        {
-            if (manualTimer == null)
-            {
-                manualTimer = new DispatcherTimer();
-                manualTimer.Interval = TimeSpan.FromSeconds(6);
-                manualTimer.Tick += delegate
-                {
-                    manualTimer.Stop();
-                    backButton.Visibility = Visibility.Collapsed;
-                    ScrollToActive(true);
-                };
-            }
-            manualTimer.Stop();
-            manualTimer.Start();
         }
 
         private void ScrollToActive(bool animate)
         {
+            if (!followActive) return;
             if (activeIndex < 0 || activeIndex >= lineElements.Count) return;
             // 先让新的行高生效，否则拿到的行位置还是旧的，滚动位置会偏
             lyricsPanel.UpdateLayout();
