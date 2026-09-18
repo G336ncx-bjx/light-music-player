@@ -111,6 +111,19 @@ namespace Skylark
                 root = window.Content as FrameworkElement;
                 window.LibraryViewRef.BatchSelectForTest(3);
             }
+            else if (view == "batch-all")
+            {
+                root = window.Content as FrameworkElement;
+                window.LibraryViewRef.BatchSelectForTest(999);   // 全选
+            }
+            else if (view == "batch-exit")
+            {
+                // 走一遍「勾了几首 → 点完成」的路径，确认不会抛异常
+                root = window.Content as FrameworkElement;
+                window.LibraryViewRef.BatchSelectForTest(3);
+                window.LibraryViewRef.ExitBatch();
+                Console.WriteLine("batch-exit: 退出批量编辑没有抛异常");
+            }
             else if (view == "download")
             {
                 root = window.Content as FrameworkElement;

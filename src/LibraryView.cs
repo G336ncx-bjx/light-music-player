@@ -26,6 +26,7 @@ namespace Skylark
         private StackPanel normalActions;
         private StackPanel batchActions;
         private Button batchButton;
+        private Button selectAllButton;
         /** 列头所在的那一行：它的右边距要跟列表的实际可视宽度对齐（滚动条会占掉十几个像素）。 */
         private readonly Grid columns = new Grid();
 
@@ -61,8 +62,8 @@ namespace Skylark
 
             // 批量编辑模式下，标题右边换成批量操作
             selCount.VerticalAlignment = VerticalAlignment.Center;
-            StackPanel selectAll = Ui.Row(8, selCount,
-                IconTextButton("check", "全选", "OutlineButton", delegate { list.SelectAll(); UpdateBatchCount(); }),
+            selectAllButton = IconTextButton("check", "全选", "OutlineButton", delegate { ToggleSelectAll(); });
+            StackPanel selectAll = Ui.Row(8, selCount, selectAllButton,
                 IconTextButton("download", "下载", "OutlineButton",
                     delegate { main.DownloadSongs(GetSelectedSongs()); }),
                 IconTextButton("plus", "加入歌单", "OutlineButton",
@@ -328,14 +329,23 @@ namespace Skylark
         /// <summary>进入 / 退出批量编辑：行首换成复选框，标题右边换成批量操作。</summary>
         private void SetBatchMode(bool on)
         {
+            // 先清空选择再换回单选模式：WPF 在「单选项里还留着多项」时会抛异常
+            if (!on && list.SelectedItems.Count > 0) list.SelectedItems.Clear();
             batchMode = on;
             normalActions.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
             batchActions.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
             list.SelectionMode = on ? SelectionMode.Multiple : SelectionMode.Single;
-            if (!on) list.SelectedItems.Clear();
             if (main.Library != null)
                 foreach (Song song in main.Library) song.BatchMode = on;
             foreach (Song song in main.VisibleSongs) song.BatchMode = on;
+            UpdateBatchCount();
+        }
+
+        /// <summary>全选 / 取消全选：已经全勾上了就再点一次全部取消。</summary>
+        private void ToggleSelectAll()
+        {
+            if (list.Items.Count > 0 && list.SelectedItems.Count >= list.Items.Count) list.SelectedItems.Clear();
+            else list.SelectAll();
             UpdateBatchCount();
         }
 
@@ -343,6 +353,14 @@ namespace Skylark
         {
             if (selCount == null) return;
             selCount.Text = "已选 " + list.SelectedItems.Count + " 首";
+            if (selectAllButton != null)
+            {
+                bool all = list.Items.Count > 0 && list.SelectedItems.Count >= list.Items.Count;
+                TextBlock label = null;
+                StackPanel row = selectAllButton.Content as StackPanel;
+                if (row != null && row.Children.Count > 1) label = row.Children[1] as TextBlock;
+                if (label != null) label.Text = all ? "取消全选" : "全选";
+            }
         }
 
         /// <summary>切页时退出批量编辑（音乐库和队列共用同一批 Song 对象）。</summary>

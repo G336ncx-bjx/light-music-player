@@ -24,6 +24,7 @@ namespace Skylark
         private readonly TextBlock selCount = Ui.Text("", 12.5, "TextMuted");
         private StackPanel normalActions;
         private StackPanel batchActions;
+        private Button selectAllButton;
 
         public QueueView(MainWindow owner)
         {
@@ -48,8 +49,8 @@ namespace Skylark
             normalActions.VerticalAlignment = VerticalAlignment.Center;
 
             selCount.VerticalAlignment = VerticalAlignment.Center;
-            batchActions = Ui.Row(8, selCount,
-                Ui.Button("全选", "OutlineButton", delegate { list.SelectAll(); UpdateBatchCount(); }),
+            selectAllButton = Ui.Button("全选", "OutlineButton", delegate { ToggleSelectAll(); });
+            batchActions = Ui.Row(8, selCount, selectAllButton,
                 Ui.Button("下载", "OutlineButton", delegate { main.DownloadSongs(GetSelectedSongs()); }),
                 Ui.Button("加入歌单", "OutlineButton", delegate { main.AddSelectionToPlaylist(GetSelectedSongs()); }),
                 Ui.Button("移除", "OutlineButton", delegate { RemoveSelected(); }),
@@ -154,12 +155,21 @@ namespace Skylark
         /// <summary>进入 / 退出批量编辑。</summary>
         private void SetBatchMode(bool on)
         {
+            // 先清空选择再换回单选模式：WPF 在「单选项里还留着多项」时会抛异常
+            if (!on && list.SelectedItems.Count > 0) list.SelectedItems.Clear();
             batchMode = on;
             normalActions.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
             batchActions.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
             list.SelectionMode = on ? SelectionMode.Multiple : SelectionMode.Single;
-            if (!on) list.SelectedItems.Clear();
             foreach (Song song in main.Queue) song.BatchMode = on;
+            UpdateBatchCount();
+        }
+
+        /// <summary>全选 / 取消全选：已经全勾上了就再点一次全部取消。</summary>
+        private void ToggleSelectAll()
+        {
+            if (list.Items.Count > 0 && list.SelectedItems.Count >= list.Items.Count) list.SelectedItems.Clear();
+            else list.SelectAll();
             UpdateBatchCount();
         }
 
@@ -173,6 +183,11 @@ namespace Skylark
         {
             if (selCount == null) return;
             selCount.Text = "已选 " + list.SelectedItems.Count + " 首";
+            if (selectAllButton != null)
+            {
+                bool all = list.Items.Count > 0 && list.SelectedItems.Count >= list.Items.Count;
+                selectAllButton.Content = Ui.Text(all ? "取消全选" : "全选", 13, "Text");
+            }
         }
 
         private static bool FindAction(DependencyObject source, string tag)
