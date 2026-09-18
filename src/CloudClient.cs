@@ -801,6 +801,120 @@ namespace Skylark
             PostJsonByToken(token, "/api/v2.1/via-repo-token/move-dir/", body.ToString());
         }
 
+        /// <summary>
+        /// 确保云盘上某个目录存在（歌单的「新建」用它）。
+        /// 文件夹令牌没有 mkdir 接口（/api2/repos/… 那套只有账号令牌能用），
+        /// 但上传接口支持 relative_path 递归建子目录：往目标目录传一个占位文件、
+        /// 再把占位文件删掉，目录就留下了。
+        /// </summary>
+        public static void EnsureDir(string endpoint, string dirPath)
+        {
+            string dir = string.IsNullOrEmpty(dirPath) ? "/" : dirPath.Trim();
+            if (dir == "/" || dir.Length == 0) return;
+            if (!dir.StartsWith("/")) dir = "/" + dir;
+            if (DirExists(endpoint, dir)) return;
+
+            string temp = Path.Combine(Path.GetTempPath(), "skylark-dir-probe.tmp");
+            File.WriteAllText(temp, "placeholder", new UTF8Encoding(false));
+            string relative = dir.Trim('/') + "/";
+            try
+            {
+                string link = GetUploadUrlByToken(endpoint.Trim(), "/");
+                string error;
+                if (!TryUploadTo(link, temp, "/", relative, null, out error))
+                    throw new InvalidOperationException(Shorten(error));
+            }
+            finally
+            {
+                try { File.Delete(temp); } catch (Exception) { }
+            }
+            // 占位文件删掉，只留目录
+            try
+            {
+                DeleteFiles(endpoint.Trim(), dir, new List<string>(new string[] { "skylark-dir-probe.tmp" }));
+            }
+            catch (Exception)
+            {
+                // 删不掉也不影响：占位文件不是音频/歌词，App 扫描时会忽略
+            }
+        }
+
+        /// <summary>云盘上某个目录存不存在。</summary>
+        public static bool DirExists(string endpoint, string dirPath)
+        {
+            try
+            {
+                List<CloudEntry> list = ListByToken(endpoint.Trim(), dirPath, false);
+                return list != null;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>和 TryUpload 一样，但能指定上传接口的 relative_path（用来递归建子目录）。</summary>
+        private static bool TryUploadTo(string uploadLink, string localFilePath, string dirPath,
+            string relativePath, Action<long, long> progress, out string error)
+        {
+            error = null;
+            string url = uploadLink + "?ret-json=1";
+            string boundary = "----Skylark" + Guid.NewGuid().ToString("N");
+            string fileName = Path.GetFileName(localFilePath);
+            string dir = string.IsNullOrEmpty(dirPath) ? "/" : dirPath;
+            if (!dir.StartsWith("/")) dir = "/" + dir;
+
+            byte[] dirPart = FormField(boundary, "parent_dir", dir);
+            byte[] relPart = FormField(boundary, "relative_path", relativePath == null ? "" : relativePath);
+            byte[] filePart = FileFieldHeader(boundary, fileName);
+            byte[] tail = Encoding.UTF8.GetBytes("\r\n--" + boundary + "--\r\n");
+            long fileLength = new FileInfo(localFilePath).Length;
+
+            HttpWebRequest request = CreateRequest(url);
+            request.Method = "POST";
+            request.ContentType = "multipart/form-data; boundary=" + boundary;
+            request.ContentLength = dirPart.Length + relPart.Length + filePart.Length + fileLength + tail.Length;
+            request.Timeout = 60000;
+            try
+            {
+                using (Stream stream = request.GetRequestStream())
+                {
+                    stream.Write(dirPart, 0, dirPart.Length);
+                    stream.Write(relPart, 0, relPart.Length);
+                    stream.Write(filePart, 0, filePart.Length);
+                    using (FileStream file = new FileStream(localFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        byte[] buffer = new byte[65536];
+                        long done = 0;
+                        int read;
+                        while ((read = file.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            stream.Write(buffer, 0, read);
+                            done += read;
+                            if (progress != null) progress(done, fileLength);
+                        }
+                    }
+                    stream.Write(tail, 0, tail.Length);
+                }
+                using (WebResponse response = request.GetResponse())
+                {
+                    using (Stream stream = response.GetResponseStream())
+                    {
+                        using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                        {
+                            reader.ReadToEnd();
+                        }
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
         private static void PostJsonByToken(string token, string apiPath, string json)
         {
             string url = ParseHost(token) + apiPath;

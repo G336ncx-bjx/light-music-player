@@ -121,6 +121,13 @@ namespace Skylark
                 Environment.Exit(CloudMove(args));
                 return;
             }
+            if (args.Length > 0 && args[0] == "--cloudmkdir")
+            {
+                AttachConsole();
+                Environment.Exit(CloudMkdir(args.Length > 1 ? args[1] : null,
+                    args.Length > 2 ? args[2] : null));
+                return;
+            }
             if (args.Length > 0 && args[0] == "--uploadall")
             {
                 AttachConsole();
@@ -688,6 +695,28 @@ namespace Skylark
         /// 批量移动：--cloudmove &lt;endpoint&gt; &lt;源目录&gt; &lt;目标目录&gt; &lt;名字1&gt; [名字2 ...]
         /// 用服务端接口搬，不重传数据（歌单就是靠这个把歌搬进搬出）。
         /// </summary>
+        /// <summary>在云盘上建目录：--cloudmkdir &lt;endpoint&gt; &lt;cloud-dir&gt;</summary>
+        private static int CloudMkdir(string endpoint, string dirPath)
+        {
+            if (string.IsNullOrEmpty(endpoint) || string.IsNullOrEmpty(dirPath))
+            {
+                Console.WriteLine("usage: Skylark.exe --cloudmkdir <endpoint> <cloud-dir>");
+                return 1;
+            }
+            try
+            {
+                CloudClient.EnsureDir(endpoint, dirPath);
+                bool ok = CloudClient.DirExists(endpoint, dirPath);
+                Console.WriteLine((ok ? "目录已就绪: " : "建目录似乎没成功: ") + dirPath);
+                return ok ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("建目录失败: " + ex.Message);
+                return 1;
+            }
+        }
+
         private static int CloudMove(string[] args)
         {
             if (args.Length < 5)
