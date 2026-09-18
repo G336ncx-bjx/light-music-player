@@ -21,7 +21,7 @@ namespace Skylark
     public partial class MainWindow : Window
     {
         public const string AppName = "云雀";
-        public const string AppVersion = "3.3.21";
+        public const string AppVersion = "3.3.22";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -40,6 +40,8 @@ namespace Skylark
         /// <summary>当前歌单筛选：空串＝全部歌单。</summary>
         private string playlistFilter = "";
         private readonly StackPanel playlistNav = new StackPanel();
+        /** 扫描到的歌单名（＝文件夹名，含空歌单），和歌曲里的歌单取并集。 */
+        private readonly List<string> folderPlaylists = new List<string>();
         private string playlistSignature = "";
         private int queueIndex = -1;
         private Song currentSong;
@@ -1420,6 +1422,8 @@ namespace Skylark
             scanning = false;
             settings.Durations = result.Cache;
             library = result.Songs;
+            folderPlaylists.Clear();
+            if (result.Playlists != null) folderPlaylists.AddRange(result.Playlists);
             ApplyFilter();
             Raise(LibraryChanged);
 
@@ -1820,8 +1824,21 @@ namespace Skylark
             SortSongs(list);
             visible = list;
             if (libraryView != null) libraryView.RefreshItems();
-            if (libraryCountText != null) libraryCountText.Text = library.Count.ToString(CultureInfo.InvariantCulture);
+            if (libraryCountText != null)
+                libraryCountText.Text = DistinctCount().ToString(CultureInfo.InvariantCulture);
             RefreshPlaylists();
+        }
+
+        /// <summary>
+        /// 按「歌名 + 歌手」去重后的曲目数：一首歌放进两个歌单只算一首，
+        /// 侧栏数字和「全部歌曲」视图的口径跟它保持一致。
+        /// </summary>
+        public int DistinctCount()
+        {
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < library.Count; i++)
+                seen.Add(library[i].Title + "\u0001" + library[i].Artist);
+            return seen.Count;
         }
 
         /// <summary>
@@ -1830,13 +1847,8 @@ namespace Skylark
         /// </summary>
         private void RefreshPlaylists()
         {
-            List<string> names = new List<string>();
-            for (int i = 0; i < library.Count; i++)
-            {
-                string name = library[i].Playlist;
-                if (!string.IsNullOrEmpty(name) && !names.Contains(name)) names.Add(name);
-            }
-            names.Sort(StringComparer.CurrentCultureIgnoreCase);
+            // 歌单来源＝扫描到的文件夹（空歌单也在）+ 歌曲里出现过的歌单
+            List<string> names = PlaylistNames();
             if (playlistFilter.Length > 0 && !names.Contains(playlistFilter)) playlistFilter = "";
 
             string signature = playlistFilter + "|" + string.Join("|", names.ToArray());
@@ -1845,7 +1857,7 @@ namespace Skylark
 
             playlistNav.Children.Clear();
             playlistNav.Children.Add(NavHeader("歌单"));
-            playlistNav.Children.Add(PlaylistRow("全部歌曲", "", visible.Count));
+            playlistNav.Children.Add(PlaylistRow("全部歌曲", "", DistinctCount()));
             for (int i = 0; i < names.Count; i++)
             {
                 int count = 0;
@@ -2267,6 +2279,11 @@ namespace Skylark
         public List<string> PlaylistNames()
         {
             List<string> names = new List<string>();
+            for (int i = 0; i < folderPlaylists.Count; i++)
+            {
+                string folder = folderPlaylists[i];
+                if (!string.IsNullOrEmpty(folder) && !names.Contains(folder)) names.Add(folder);
+            }
             for (int i = 0; i < library.Count; i++)
             {
                 string name = library[i].Playlist;

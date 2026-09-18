@@ -39,6 +39,16 @@ namespace Skylark
             Dictionary<string, CloudEntry> lyrics = new Dictionary<string, CloudEntry>(StringComparer.OrdinalIgnoreCase);
             foreach (CloudEntry file in files)
             {
+                // 歌单＝云盘上的文件夹：空文件夹也记下来，这样新建完立刻能看到
+                if (file.IsDirectory)
+                {
+                    string p = file.Path.Trim('/');
+                    int slash = p.IndexOf('/');
+                    string dir = slash > 0 ? p.Substring(0, slash) : p;
+                    if (!string.IsNullOrEmpty(dir) && !result.Playlists.Contains(dir))
+                        result.Playlists.Add(dir);
+                    continue;
+                }
                 if (string.Equals(Path.GetExtension(file.Name), ".lrc", StringComparison.OrdinalIgnoreCase))
                     lyrics[ChangeExtension(file.Path, string.Empty)] = file;
             }

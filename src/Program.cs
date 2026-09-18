@@ -797,6 +797,12 @@ namespace Skylark
 
                 ScanResult scan = CloudLibrary.Scan(url, null, null);
                 Report(report, "songs = " + scan.Songs.Count);
+                System.Collections.Generic.HashSet<string> distinctIds =
+                    new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (Song s in scan.Songs) distinctIds.Add(s.Title + "\u0001" + s.Artist);
+                Report(report, "distinct songs = " + distinctIds.Count);
+                Report(report, "playlists = " + scan.Playlists.Count
+                    + (scan.Playlists.Count > 0 ? " [" + string.Join(", ", scan.Playlists.ToArray()) + "]" : ""));
                 if (scan.Songs.Count == 0)
                 {
                     Report(report, "CLOUDTEST FAILED: 没有扫描到歌曲");

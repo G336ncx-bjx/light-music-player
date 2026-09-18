@@ -251,8 +251,8 @@ namespace Skylark
             UpdateBatchCount();
 
             string text = songs.Count.ToString(CultureInfo.InvariantCulture) + " 首";
-            if (main.Library.Count != songs.Count)
-                text += "（共 " + main.Library.Count + " 首）";
+            if (main.PlaylistFilter.Length > 0 && main.DistinctCount() != songs.Count)
+                text += "（全部歌曲共 " + main.DistinctCount() + " 首）";
             summary.Text = text;
 
             bool empty = songs.Count == 0;
@@ -272,7 +272,9 @@ namespace Skylark
                     }
                     else
                     {
-                        hint.Text = "没有匹配「" + main.SearchText + "」的歌曲";
+                        hint.Text = main.PlaylistFilter.Length > 0 && main.SearchText.Length == 0
+                            ? "这个歌单还是空的。\n在音乐库里点「批量编辑」勾几首，再「加入歌单」放进来。"
+                            : "没有匹配「" + main.SearchText + "」的歌曲";
                     }
                 }
             }

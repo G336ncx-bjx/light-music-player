@@ -1043,11 +1043,14 @@ namespace Skylark
         public List<DurationEntry> Cache;
         /// <summary>被跳过的、不支持的音频文件数量（例如 ape / dsf / amr）。</summary>
         public int SkippedUnsupported;
+        /// <summary>库里的歌单（＝文件夹名，含还没有歌的空歌单）。</summary>
+        public List<string> Playlists;
 
         public ScanResult()
         {
             Songs = new List<Song>();
             Cache = new List<DurationEntry>();
+            Playlists = new List<string>();
         }
     }
 
@@ -1091,6 +1094,16 @@ namespace Skylark
             List<string> files = new List<string>();
             try
             {
+                // 歌单＝子文件夹：顺手记下名字，空文件夹也要显示出来
+                if (recursive)
+                {
+                    foreach (string sub in Directory.GetDirectories(dir))
+                    {
+                        string name = Path.GetFileName(sub);
+                        if (!string.IsNullOrEmpty(name) && !result.Playlists.Contains(name))
+                            result.Playlists.Add(name);
+                    }
+                }
                 SearchOption opt = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
                 foreach (string f in Directory.GetFiles(dir, "*.*", opt))
                 {
