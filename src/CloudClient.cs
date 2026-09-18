@@ -757,6 +757,75 @@ namespace Skylark
             }
         }
 
+        /// <summary>
+        /// 批量移动文件/文件夹（服务端完成，不重传数据）。
+        /// 目标目录必须已存在 —— 这是 Seafile 的 `sync-batch-move-item` 接口约定。
+        /// 歌单功能就是靠它把歌搬进/搬出歌单文件夹。
+        /// </summary>
+        public static void MoveItems(string token, string srcDir, List<string> names, string dstDir)
+        {
+            if (names == null || names.Count == 0) return;
+            StringBuilder body = new StringBuilder();
+            body.Append("{\"src_parent_dir\":\"").Append(JsonEscape(srcDir)).Append("\",\"src_dirents\":[");
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (i > 0) body.Append(',');
+                body.Append('"').Append(JsonEscape(names[i])).Append('"');
+            }
+            body.Append("],\"dst_parent_dir\":\"").Append(JsonEscape(dstDir)).Append("\"}");
+            PostJsonByToken(token, "/api/v2.1/via-repo-token/sync-batch-move-item/", body.ToString());
+        }
+
+        /// <summary>把某个文件/目录复制一份到目标目录（目标目录必须已存在）。</summary>
+        public static void CopyItems(string token, string srcDir, List<string> names, string dstDir)
+        {
+            if (names == null || names.Count == 0) return;
+            StringBuilder body = new StringBuilder();
+            body.Append("{\"src_parent_dir\":\"").Append(JsonEscape(srcDir)).Append("\",\"src_dirents\":[");
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (i > 0) body.Append(',');
+                body.Append('"').Append(JsonEscape(names[i])).Append('"');
+            }
+            body.Append("],\"dst_parent_dir\":\"").Append(JsonEscape(dstDir)).Append("\"}");
+            PostJsonByToken(token, "/api/v2.1/via-repo-token/sync-batch-copy-item/", body.ToString());
+        }
+
+        /// <summary>移动一个文件夹到别的目录（同一资料库内）。</summary>
+        public static void MoveDir(string token, string srcParentDir, string dirName, string dstParentDir)
+        {
+            StringBuilder body = new StringBuilder();
+            body.Append("{\"src_parent_dir\":\"").Append(JsonEscape(srcParentDir))
+                .Append("\",\"src_dirent_name\":\"").Append(JsonEscape(dirName))
+                .Append("\",\"dst_parent_dir\":\"").Append(JsonEscape(dstParentDir)).Append("\"}");
+            PostJsonByToken(token, "/api/v2.1/via-repo-token/move-dir/", body.ToString());
+        }
+
+        private static void PostJsonByToken(string token, string apiPath, string json)
+        {
+            string url = ParseHost(token) + apiPath;
+            HttpWebRequest request = CreateRequest(url);
+            request.Method = "POST";
+            request.ContentType = "application/json";
+            request.Headers.Add("Authorization", "Token " + token.Trim());
+            byte[] data = Encoding.UTF8.GetBytes(json);
+            request.ContentLength = data.Length;
+            using (Stream stream = request.GetRequestStream())
+            {
+                stream.Write(data, 0, data.Length);
+            }
+            using (WebResponse response = request.GetResponse())
+            {
+                using (Stream stream = response.GetResponseStream())
+                {
+                    using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
+                    {
+                        reader.ReadToEnd();
+                    }
+                }
+            }
+        }
+
         private static string JsonEscape(string text)
         {
             if (string.IsNullOrEmpty(text)) return string.Empty;

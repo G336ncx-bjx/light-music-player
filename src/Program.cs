@@ -108,6 +108,19 @@ namespace Skylark
                     args.Length > 2 ? args[2] : null));
                 return;
             }
+            if (args.Length > 0 && args[0] == "--cloudupload")
+            {
+                AttachConsole();
+                Environment.Exit(CloudUpload(args.Length > 1 ? args[1] : null,
+                    args.Length > 2 ? args[2] : null, args.Length > 3 ? args[3] : null));
+                return;
+            }
+            if (args.Length > 0 && args[0] == "--cloudmove")
+            {
+                AttachConsole();
+                Environment.Exit(CloudMove(args));
+                return;
+            }
             if (args.Length > 0 && args[0] == "--uploadall")
             {
                 AttachConsole();
@@ -644,6 +657,61 @@ namespace Skylark
             {
                 LogCrash(ex);
                 Console.WriteLine("delete failed: " + ex.Message);
+                return 1;
+            }
+        }
+
+        /// <summary>把本地文件传到云盘指定目录（目标目录不存在时会尝试建出来）。</summary>
+        private static int CloudUpload(string endpoint, string localFile, string cloudDir)
+        {
+            if (string.IsNullOrEmpty(endpoint) || string.IsNullOrEmpty(localFile) || string.IsNullOrEmpty(cloudDir))
+            {
+                Console.WriteLine("usage: Skylark.exe --cloudupload <endpoint> <local-file> <cloud-dir>");
+                return 1;
+            }
+            try
+            {
+                bool replaced;
+                CloudClient.Upload(endpoint, localFile, cloudDir, null, out replaced);
+                Console.WriteLine("uploaded " + System.IO.Path.GetFileName(localFile) + " -> " + cloudDir
+                    + (replaced ? " [替换]" : ""));
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("上传失败: " + ex.Message);
+                return 1;
+            }
+        }
+
+        /// <summary>
+        /// 批量移动：--cloudmove &lt;endpoint&gt; &lt;源目录&gt; &lt;目标目录&gt; &lt;名字1&gt; [名字2 ...]
+        /// 用服务端接口搬，不重传数据（歌单就是靠这个把歌搬进搬出）。
+        /// </summary>
+        private static int CloudMove(string[] args)
+        {
+            if (args.Length < 5)
+            {
+                Console.WriteLine("usage: Skylark.exe --cloudmove <endpoint> <src-dir> <dst-dir> <name1> [name2 ...]");
+                return 1;
+            }
+            string endpoint = args[1];
+            string srcDir = args[2];
+            string dstDir = args[3];
+            List<string> names = new List<string>();
+            for (int i = 4; i < args.Length; i++)
+            {
+                if (!string.IsNullOrEmpty(args[i])) names.Add(args[i]);
+            }
+            try
+            {
+                CloudClient.MoveItems(endpoint, srcDir, names, dstDir);
+                Console.WriteLine("移动 " + names.Count + " 项：" + srcDir + " -> " + dstDir);
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("移动失败: " + ex.Message);
                 return 1;
             }
         }
