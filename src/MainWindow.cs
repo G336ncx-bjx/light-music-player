@@ -2210,6 +2210,20 @@ namespace Skylark
                 ShowView("library");
                 SetPlaylistFilter(captured);
             };
+            if (value.Length > 0)
+            {
+                // 右键歌单：改名 / 删除（歌单就是云盘上的一个文件夹）
+                ContextMenu menu = new ContextMenu();
+                MenuItem rename = new MenuItem();
+                rename.Header = "重命名歌单…";
+                rename.Click += delegate { RenamePlaylist(captured); };
+                MenuItem remove = new MenuItem();
+                remove.Header = "删除歌单…";
+                remove.Click += delegate { DeletePlaylist(captured); };
+                menu.Items.Add(rename);
+                menu.Items.Add(remove);
+                toggle.ContextMenu = menu;
+            }
             toggle.Margin = new Thickness(0, 1, 0, 1);
             return toggle;
         }
