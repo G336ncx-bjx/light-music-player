@@ -7,6 +7,7 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -91,6 +92,7 @@ public class Store {
         }
         index = Prefs.queueIndex(c);
         if (index < 0 || index >= queue.size()) index = queue.isEmpty() ? -1 : 0;
+        loadShuffleRestore(c);
     }
 
     public static void saveQueue(Context c) {
@@ -98,6 +100,88 @@ public class Store {
         for (int i = 0; i < queue.size(); i++) arr.put(queue.get(i).toJson());
         Prefs.setQueue(c, arr.toString());
         Prefs.setQueueIndex(c, index);
+    }
+
+    // ---------- 随机播放：点的时候打乱一次，之后按顺序往下放 ----------
+
+    private static List<String> shuffleRestore;
+
+    private static void loadShuffleRestore(Context c) {
+        shuffleRestore = null;
+        String text = Prefs.shuffleRestore(c);
+        if (text == null || text.length() == 0) return;
+        try {
+            JSONArray arr = new JSONArray(text);
+            List<String> list = new ArrayList<String>();
+            for (int i = 0; i < arr.length(); i++) {
+                String path = arr.optString(i, "");
+                if (path.length() > 0) list.add(path);
+            }
+            if (!list.isEmpty()) shuffleRestore = list;
+        } catch (Exception e) {
+            // 解析失败就当没有保存过
+        }
+    }
+
+    private static void saveShuffleRestore(Context c) {
+        if (shuffleRestore == null) {
+            Prefs.setShuffleRestore(c, "");
+            return;
+        }
+        JSONArray arr = new JSONArray();
+        for (int i = 0; i < shuffleRestore.size(); i++) arr.put(shuffleRestore.get(i));
+        Prefs.setShuffleRestore(c, arr.toString());
+    }
+
+    /**
+     * 点「随机播放」：把播放队列真的打乱一次（当前这首放在最前，不打断），
+     * 之后就和列表循环一样按这个顺序往下放。抽签只发生在这一刻。
+     */
+    public static void enterShuffle(Context c) {
+        if (queue.size() <= 1) return;
+        if (shuffleRestore == null) {
+            shuffleRestore = new ArrayList<String>();
+            for (int i = 0; i < queue.size(); i++) shuffleRestore.add(queue.get(i).cloudPath);
+            saveShuffleRestore(c);
+        }
+        Song current = (index >= 0 && index < queue.size()) ? queue.get(index) : null;
+        List<Song> rest = new ArrayList<Song>();
+        for (int i = 0; i < queue.size(); i++) {
+            if (queue.get(i) != current) rest.add(queue.get(i));
+        }
+        Collections.shuffle(rest);
+        queue.clear();
+        if (current != null) queue.add(current);
+        queue.addAll(rest);
+        index = queue.isEmpty() ? -1 : 0;
+        saveQueue(c);
+    }
+
+    /** 关掉随机播放：按进入随机前记下的顺序还原（当前这首继续放）。 */
+    public static void exitShuffle(Context c) {
+        if (shuffleRestore == null || shuffleRestore.isEmpty()) return;
+        Song current = (index >= 0 && index < queue.size()) ? queue.get(index) : null;
+        List<Song> ordered = new ArrayList<Song>();
+        for (int i = 0; i < shuffleRestore.size(); i++) {
+            String path = shuffleRestore.get(i);
+            for (int k = 0; k < queue.size(); k++) {
+                Song s = queue.get(k);
+                if (path.equals(s.cloudPath) && !ordered.contains(s)) {
+                    ordered.add(s);
+                    break;
+                }
+            }
+        }
+        // 随机之后新加进来的歌，按添加顺序接在后面
+        for (int i = 0; i < queue.size(); i++) {
+            if (!ordered.contains(queue.get(i))) ordered.add(queue.get(i));
+        }
+        queue.clear();
+        queue.addAll(ordered);
+        index = current == null ? -1 : queue.indexOf(current);
+        shuffleRestore = null;
+        saveShuffleRestore(c);
+        saveQueue(c);
     }
 
     private static void loadTable(Context c, String key, Map<String, Double> target) {

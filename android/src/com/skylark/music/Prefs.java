@@ -63,6 +63,11 @@ public class Prefs {
 
     public static int queueIndex(Context c) { return sp(c).getInt("qindex", 0); }
     public static void setQueueIndex(Context c, int v) { sp(c).edit().putInt("qindex", v).apply(); }
+    /** 进入随机播放前的队列顺序（JSON 数组），关掉随机时用来还原。 */
+    public static String shuffleRestore(Context c) { return sp(c).getString("shuffleRestore", ""); }
+    public static void setShuffleRestore(Context c, String v) {
+        sp(c).edit().putString("shuffleRestore", v == null ? "" : v).apply();
+    }
 
     public static String lastSong(Context c) { return sp(c).getString("last", ""); }
     public static void setLastSong(Context c, String v) { sp(c).edit().putString("last", v == null ? "" : v).apply(); }

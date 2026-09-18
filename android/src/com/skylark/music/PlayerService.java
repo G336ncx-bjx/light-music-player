@@ -385,19 +385,15 @@ public class PlayerService extends Service {
             playAt(Store.index);
             return;
         }
-        int nextIndex;
-        if (Store.mode == 3) {
-            nextIndex = randomIndex();
-        } else {
-            nextIndex = Store.index + 1;
-            if (nextIndex >= Store.queue.size()) {
-                if (Store.mode == 0) {
-                    pause();
-                    Store.status = "播放列表已结束";
-                    return;
-                }
-                nextIndex = 0;
+        // 随机播放也走「按列表顺序」：列表在点随机时已经被打乱过一次了
+        int nextIndex = Store.index + 1;
+        if (nextIndex >= Store.queue.size()) {
+            if (Store.mode == 0) {
+                pause();
+                Store.status = "播放列表已结束";
+                return;
             }
+            nextIndex = 0;
         }
         playAt(nextIndex);
     }
@@ -414,7 +410,10 @@ public class PlayerService extends Service {
     }
 
     public void setMode(int m) {
+        int previous = Store.mode;
         Store.mode = m;
+        if (m == 3 && previous != 3) Store.enterShuffle(this);
+        else if (m != 3 && previous == 3) Store.exitShuffle(this);
         Prefs.setMode(this, m);
         Store.status = "播放模式：" + Store.modeName(m);
         notifyChanged();
@@ -595,10 +594,6 @@ public class PlayerService extends Service {
     /** 按当前播放模式算下一首（顺序播放到底就是没有）。 */
     private Song nextSong() {
         if (Store.queue.isEmpty()) return null;
-        if (Store.mode == 3) {
-            if (Store.queue.size() <= 1) return null;
-            return Store.queue.get(randomIndex());
-        }
         int at = Store.index + 1;
         if (at >= Store.queue.size()) {
             if (Store.mode == 0) return null;

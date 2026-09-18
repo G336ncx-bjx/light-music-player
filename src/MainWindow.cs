@@ -21,7 +21,7 @@ namespace Skylark
     public partial class MainWindow : Window
     {
         public const string AppName = "云雀";
-        public const string AppVersion = "3.3.12";
+        public const string AppVersion = "3.3.13";
 
         /// <summary>桌面歌词的预设颜色（浅色背景建议用后面的深色）。</summary>
         public static readonly string[] LyricColorPresets = new string[]
@@ -310,16 +310,9 @@ namespace Skylark
                 engine.Seek(0);
                 return;
             }
-            if (settings.Mode == PlayMode.Shuffle)
-            {
-                queueIndex = RandomIndex();
-            }
-            else
-            {
-                queueIndex--;
-                if (queueIndex < 0)
-                    queueIndex = settings.Mode == PlayMode.Sequential ? 0 : queue.Count - 1;
-            }
+            queueIndex--;
+            if (queueIndex < 0)
+                queueIndex = settings.Mode == PlayMode.Sequential ? 0 : queue.Count - 1;
             PlayCurrent(true);
         }
 
@@ -355,11 +348,70 @@ namespace Skylark
 
         public void SetMode(PlayMode mode)
         {
+            PlayMode previous = settings.Mode;
             settings.Mode = mode;
+            // 随机播放＝点的时候把列表真的打乱一次，之后按顺序往下放；
+            // 关掉随机就把原来的顺序还原回来。
+            if (mode == PlayMode.Shuffle && previous != PlayMode.Shuffle) EnterShuffle();
+            else if (mode != PlayMode.Shuffle && previous == PlayMode.Shuffle) ExitShuffle();
             UpdateModeButton();
             SaveSettings();
             ShowToast("播放模式：" + ModeName(mode));
             Raise(PlaybackStateChanged);
+        }
+
+        /// <summary>
+        /// 点「随机播放」：把播放列表打乱一次（当前这首放在最前，不打断正在听的），
+        /// 之后就和列表循环一样按顺序播。抽签只发生在这一刻，不会每切一首再抽一次。
+        /// </summary>
+        private void EnterShuffle()
+        {
+            if (queue.Count <= 1) return;
+            if (settings.ShuffleRestore == null || settings.ShuffleRestore.Count == 0)
+            {
+                settings.ShuffleRestore = new List<string>();
+                foreach (Song s in queue) settings.ShuffleRestore.Add(s.Path);
+            }
+            Song current = queueIndex >= 0 && queueIndex < queue.Count ? queue[queueIndex] : null;
+            List<Song> rest = new List<Song>();
+            foreach (Song s in queue) if (s != current) rest.Add(s);
+            Random random = new Random();
+            for (int i = rest.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                Song tmp = rest[i];
+                rest[i] = rest[j];
+                rest[j] = tmp;
+            }
+            queue.Clear();
+            if (current != null)
+            {
+                queue.Add(current);
+                queueIndex = 0;
+            }
+            queue.AddRange(rest);
+            if (current == null) queueIndex = 0;
+            UpdateQueueState();
+        }
+
+        /// <summary>关掉随机播放：按进入随机前记下的顺序把列表还原（当前这首继续放）。</summary>
+        private void ExitShuffle()
+        {
+            if (settings.ShuffleRestore == null || settings.ShuffleRestore.Count == 0) return;
+            Song current = queueIndex >= 0 && queueIndex < queue.Count ? queue[queueIndex] : null;
+            List<Song> ordered = new List<Song>();
+            foreach (string path in settings.ShuffleRestore)
+            {
+                Song found = queue.Find(delegate(Song s) { return s.Path == path; });
+                if (found != null && !ordered.Contains(found)) ordered.Add(found);
+            }
+            // 随机之后新加进来的歌，按添加顺序接在后面
+            foreach (Song s in queue) if (!ordered.Contains(s)) ordered.Add(s);
+            queue.Clear();
+            queue.AddRange(ordered);
+            queueIndex = current == null ? -1 : queue.IndexOf(current);
+            settings.ShuffleRestore = null;
+            UpdateQueueState();
         }
 
         public void CycleMode()
@@ -1793,7 +1845,8 @@ namespace Skylark
         {
             if (!IsCloudSource || queue.Count == 0) return;
             int next = queueIndex + 1;
-            if (next >= queue.Count) next = settings.Mode == PlayMode.ListLoop ? 0 : -1;
+            if (next >= queue.Count)
+                next = (settings.Mode == PlayMode.ListLoop || settings.Mode == PlayMode.Shuffle) ? 0 : -1;
             if (next < 0 || next >= queue.Count) return;
             Song song = queue[next];
             if (song == null || !song.IsCloud || song == currentSong) return;
@@ -1839,7 +1892,6 @@ namespace Skylark
         private Song PeekNextSong()
         {
             if (queue.Count == 0) return null;
-            if (settings.Mode == PlayMode.Shuffle) return queue.Count <= 1 ? null : queue[RandomIndex()];
             int at = queueIndex + 1;
             if (at >= queue.Count)
             {
@@ -1953,25 +2005,18 @@ namespace Skylark
                 UpdatePlayButton();
                 return;
             }
-            if (settings.Mode == PlayMode.Shuffle)
+            queueIndex++;
+            if (queueIndex >= queue.Count)
             {
-                queueIndex = RandomIndex();
-            }
-            else
-            {
-                queueIndex++;
-                if (queueIndex >= queue.Count)
+                if (settings.Mode == PlayMode.Sequential)
                 {
-                    if (settings.Mode == PlayMode.Sequential)
-                    {
-                        queueIndex = queue.Count - 1;
-                        engine.Stop();
-                        UpdatePlayButton();
-                        ShowToast("播放列表已结束");
-                        return;
-                    }
-                    queueIndex = 0;
+                    queueIndex = queue.Count - 1;
+                    engine.Stop();
+                    UpdatePlayButton();
+                    ShowToast("播放列表已结束");
+                    return;
                 }
+                queueIndex = 0;
             }
             PlayCurrent(true);
         }

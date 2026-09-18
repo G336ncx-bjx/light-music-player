@@ -303,6 +303,13 @@ namespace Skylark
         [DataMember(Name = "queueIndex", Order = 30)]
         public int QueueIndex { get; set; }
 
+        /// <summary>
+        /// 进入随机播放前的队列顺序（歌曲路径）。关掉随机播放时按它还原，
+        /// 所以在随机模式里待多久、重启几次都不会把原来的列表顺序弄丢。
+        /// </summary>
+        [DataMember(Name = "shuffleRestore", Order = 31)]
+        public List<string> ShuffleRestore { get; set; }
+
         [DataMember(Name = "hidden", Order = 31)]
         public List<string> Hidden { get; set; }
 
