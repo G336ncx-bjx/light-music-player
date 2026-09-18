@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.17";
+    public static final String VERSION = "3.3.18";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -480,12 +480,7 @@ public class MainActivity extends Activity {
         actions.setLayoutParams(actionsP);
         actions.addView(wideButton("播放全部", false, new View.OnClickListener() {
             public void onClick(View v) {
-                playAll(false);
-            }
-        }));
-        actions.addView(wideButton("随机播放", false, new View.OnClickListener() {
-            public void onClick(View v) {
-                playAll(true);
+                playAll();
             }
         }));
         sortButton = wideButton("排序：歌名", false, new View.OnClickListener() {
@@ -643,13 +638,18 @@ public class MainActivity extends Activity {
         refreshQueue();
     }
 
-    private void playAll(boolean shuffle) {
+    /**
+     * 播放全部：按「当前播放模式」来播。
+     * 下面的模式选随机 → 先把整张列表打乱一次再顺序播；其它模式就按列表原顺序播。
+     * 这样「播放顺序」只有一个地方说了算（底部那个模式），不会再出现两处随机互相打架。
+     */
+    private void playAll() {
         List<Song> list = new ArrayList<Song>(shown);
         if (list.isEmpty()) {
             toast("音乐库是空的");
             return;
         }
-        if (shuffle) Collections.shuffle(list);
+        if (Store.mode == 3) Collections.shuffle(list);
         PlayerService service = PlayerService.instance;
         if (service == null) {
             startPlayerService();

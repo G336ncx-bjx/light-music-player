@@ -42,11 +42,10 @@ namespace Skylark
             head.Margin = new Thickness(2, 0, 0, 12);
 
             Button playAll = IconTextButton("play", "播放全部", "PrimaryButton", delegate { PlayAll(); });
-            Button shuffleAll = IconTextButton("shuffle", "随机播放", "OutlineButton", delegate { ShuffleAll(); });
             Button upload = IconTextButton("upload", "上传歌曲", "OutlineButton",
                 delegate { main.PickAndUploadFiles(); });
             upload.ToolTip = "把本地歌曲 / 歌词上传到云盘分享目录（也可以直接把文件拖进窗口）";
-            StackPanel headActions = Ui.Row(8, upload, shuffleAll, playAll);
+            StackPanel headActions = Ui.Row(8, upload, playAll);
             headActions.VerticalAlignment = VerticalAlignment.Center;
 
             Grid headRow = new Grid();
@@ -278,28 +277,34 @@ namespace Skylark
             main.PlaySong(song);
         }
 
+        /// <summary>
+        /// 播放全部：按「当前播放模式」来播。
+        /// 底部模式选随机 → 先把整张列表打乱一次再顺序播；其它模式按列表原顺序播。
+        /// 播放顺序只有一个地方说了算，不会再出现两处随机互相打架。
+        /// </summary>
         private void PlayAll()
         {
-            List<Song> songs = main.VisibleSongs;
+            List<Song> songs = new List<Song>(main.VisibleSongs);
             if (songs.Count == 0)
             {
                 main.ShowToast("列表里还没有歌曲");
                 return;
             }
+            if (main.Settings.Mode == PlayMode.Shuffle) Shuffle(songs);
             main.PlayFrom(songs, 0);
         }
 
-        private void ShuffleAll()
+        /// <summary>把列表打乱一次（随机播放模式下「播放全部」用）。</summary>
+        private static void Shuffle(List<Song> songs)
         {
-            List<Song> songs = main.VisibleSongs;
-            if (songs.Count == 0)
-            {
-                main.ShowToast("列表里还没有歌曲");
-                return;
-            }
-            main.SetMode(PlayMode.Shuffle);
             Random random = new Random();
-            main.PlayFrom(songs, random.Next(songs.Count));
+            for (int i = songs.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                Song tmp = songs[i];
+                songs[i] = songs[j];
+                songs[j] = tmp;
+            }
         }
 
         private Button IconTextButton(string icon, string text, string styleKey, RoutedEventHandler click)
