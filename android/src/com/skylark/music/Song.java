@@ -20,6 +20,11 @@ public class Song {
         return artist == null || artist.length() == 0 ? "未知歌手" : artist;
     }
 
+    /** 所属歌单＝云盘上所在的第一层文件夹（都放在根目录的歌返回空串）。 */
+    public String playlist() {
+        return Cloud.playlistOf(cloudPath);
+    }
+
     public boolean hasLyrics() {
         return lyricPath != null && lyricPath.length() > 0;
     }

@@ -159,6 +159,15 @@ public class Util {
 
     /** multipart/form-data 上传一个文件。 */
     public static String upload(String uploadUrl, String parentDir, File file, Progress progress) throws IOException {
+        return uploadTo(uploadUrl, parentDir, "", file, progress);
+    }
+
+    /**
+     * multipart/form-data 上传一个文件；relativePath 非空时服务端会按它递归建子目录
+     * （文件夹令牌没有 mkdir 接口，云雀靠这一招建歌单文件夹）。
+     */
+    public static String uploadTo(String uploadUrl, String parentDir, String relativePath,
+                                  File file, Progress progress) throws IOException {
         String boundary = "----Skylark" + System.currentTimeMillis();
         HttpURLConnection conn = open(uploadUrl, new String[] { "Content-Type", "multipart/form-data; boundary=" + boundary });
         conn.setRequestMethod("POST");
@@ -170,7 +179,8 @@ public class Util {
             write(out, "--" + boundary + "\r\n"
                     + "Content-Disposition: form-data; name=\"parent_dir\"\r\n\r\n" + parentDir + "\r\n");
             write(out, "--" + boundary + "\r\n"
-                    + "Content-Disposition: form-data; name=\"relative_path\"\r\n\r\n\r\n");
+                    + "Content-Disposition: form-data; name=\"relative_path\"\r\n\r\n"
+                    + (relativePath == null ? "" : relativePath) + "\r\n");
             write(out, "--" + boundary + "\r\n"
                     + "Content-Disposition: form-data; name=\"file\"; filename=\"" + file.getName() + "\"\r\n"
                     + "Content-Type: application/octet-stream\r\n\r\n");

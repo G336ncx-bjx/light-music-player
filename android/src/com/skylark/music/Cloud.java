@@ -4,10 +4,13 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 云盘（清华云盘 / Seafile）访问。
@@ -302,5 +305,155 @@ public class Cloud {
             t = t.substring(1, t.length() - 1);
         }
         return t.replace("\\/", "/");
+    }
+
+    // ---------- 歌单（一个云盘文件夹＝一个歌单） ----------
+
+    /** 路径规范化：保证以 / 开头、去掉末尾多余的 /。 */
+    public static String normDir(String dir) {
+        if (dir == null || dir.length() == 0) return "/";
+        String d = dir.trim();
+        if (!d.startsWith("/")) d = "/" + d;
+        while (d.length() > 1 && d.endsWith("/")) d = d.substring(0, d.length() - 1);
+        return d;
+    }
+
+    /** 从云盘路径里取出歌单名（根目录下的文件返回空串）。 */
+    public static String playlistOf(String cloudPath) {
+        if (cloudPath == null) return "";
+        String p = cloudPath.startsWith("/") ? cloudPath.substring(1) : cloudPath;
+        int slash = p.indexOf('/');
+        if (slash <= 0) return "";
+        return p.substring(0, slash);
+    }
+
+    /** 歌单名里不能出现的字符（云盘按文件名建目录，会直接失败）。 */
+    public static boolean badName(String name) {
+        if (name == null) return true;
+        String t = name.trim();
+        if (t.length() == 0) return true;
+        String bad = "/\\:*?\"<>|";
+        for (int i = 0; i < t.length(); i++) {
+            if (bad.indexOf(t.charAt(i)) >= 0) return true;
+        }
+        return false;
+    }
+
+    /** 云盘上某个目录存不存在。 */
+    public static boolean dirExists(String endpoint, String dirPath) {
+        try {
+            String url = host(endpoint) + "/api/v2.1/via-repo-token/dir/?path="
+                    + enc(normDir(dirPath)) + "&recursive=0";
+            parse(Util.getString(url, auth(endpoint)));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 确保云盘上某个目录存在（新建歌单用它）。
+     * 文件夹令牌没有 mkdir 接口，但上传接口支持 relative_path 递归建子目录：
+     * 传一个占位文件进去、再把占位文件删掉，目录就留下了。
+     */
+    public static void ensureDir(String endpoint, String dirPath, File tempDir) throws IOException {
+        String dir = normDir(dirPath);
+        if (dir.equals("/")) return;
+        if (dirExists(endpoint, dir)) return;
+
+        File probe = new File(tempDir, "skylark-dir-probe.tmp");
+        FileOutputStream out = new FileOutputStream(probe);
+        try {
+            out.write("placeholder".getBytes("UTF-8"));
+        } finally {
+            out.close();
+        }
+        try {
+            String link = uploadLink(endpoint, "/") + "?ret-json=1";
+            Util.uploadTo(link, "/", dir.substring(1) + "/", probe, null);
+        } finally {
+            probe.delete();
+        }
+        try {
+            delete(endpoint, dir + "/skylark-dir-probe.tmp");
+        } catch (Exception ignored) {
+            // 删不掉也不影响：占位文件不是音频/歌词，扫描时会忽略
+        }
+    }
+
+    private static String batchBody(String srcDir, List<String> names, String dstDir) throws IOException {
+        JSONObject body = new JSONObject();
+        try {
+            JSONArray arr = new JSONArray();
+            for (int i = 0; i < names.size(); i++) arr.put(names.get(i));
+            body.put("src_parent_dir", normDir(srcDir));
+            body.put("src_dirents", arr);
+            body.put("dst_parent_dir", normDir(dstDir));
+        } catch (Exception e) {
+            throw new IOException(e.getMessage());
+        }
+        return body.toString();
+    }
+
+    private static void postByToken(String endpoint, String api, String body) throws IOException {
+        String url = host(endpoint) + "/api/v2.1/via-repo-token/" + api;
+        String result = Util.request("POST", url, auth(endpoint), body);
+        if (result != null && result.indexOf("\"error\"") >= 0) throw new IOException(Util.shorten(result));
+    }
+
+    /** 服务端批量移动（不重传，秒完成；目标目录必须已存在）。 */
+    public static void moveItems(String endpoint, String srcDir, List<String> names, String dstDir) throws IOException {
+        if (names.isEmpty()) return;
+        postByToken(endpoint, "sync-batch-move-item/", batchBody(srcDir, names, dstDir));
+    }
+
+    /** 服务端批量复制（同一首歌进两个歌单＝两处各放一份文件）。 */
+    public static void copyItems(String endpoint, String srcDir, List<String> names, String dstDir) throws IOException {
+        if (names.isEmpty()) return;
+        postByToken(endpoint, "sync-batch-copy-item/", batchBody(srcDir, names, dstDir));
+    }
+
+    /** 移动一个文件夹（歌单改名用）。 */
+    public static void moveDir(String endpoint, String dirName, String dstParentDir) throws IOException {
+        JSONObject body = new JSONObject();
+        try {
+            body.put("src_parent_dir", "/");
+            body.put("src_dirent_name", dirName);
+            body.put("dst_parent_dir", normDir(dstParentDir));
+        } catch (Exception e) {
+            throw new IOException(e.getMessage());
+        }
+        postByToken(endpoint, "move-dir/", body.toString());
+    }
+
+    /** 批量删除（按所在目录分组，每组一个请求）。 */
+    public static void deleteAll(String endpoint, List<String> cloudPaths) throws IOException {
+        Map<String, List<String>> groups = new LinkedHashMap<String, List<String>>();
+        for (int i = 0; i < cloudPaths.size(); i++) {
+            String p = normDir(cloudPaths.get(i));
+            int slash = p.lastIndexOf('/');
+            String parent = slash <= 0 ? "/" : p.substring(0, slash);
+            String name = p.substring(slash + 1);
+            if (name.length() == 0) continue;
+            List<String> list = groups.get(parent);
+            if (list == null) {
+                list = new ArrayList<String>();
+                groups.put(parent, list);
+            }
+            list.add(name);
+        }
+        for (Map.Entry<String, List<String>> entry : groups.entrySet()) {
+            JSONObject body = new JSONObject();
+            try {
+                JSONArray arr = new JSONArray();
+                for (int i = 0; i < entry.getValue().size(); i++) arr.put(entry.getValue().get(i));
+                body.put("parent_dir", entry.getKey());
+                body.put("dirents", arr);
+            } catch (Exception e) {
+                throw new IOException(e.getMessage());
+            }
+            String url = host(endpoint) + "/api/v2.1/via-repo-token/batch-delete-item/";
+            Util.request("DELETE", url, auth(endpoint), body.toString());
+        }
     }
 }

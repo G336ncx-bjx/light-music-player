@@ -32,6 +32,7 @@ import android.widget.AdapterView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -58,6 +59,7 @@ public class MainActivity extends Activity {
 
     private static final int REQ_PICK = 101;
     private static final int REQ_NOTIFY = 102;
+    private static final int REQ_STORAGE = 103;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
     public static final String VERSION = "3.3.18";
@@ -87,11 +89,18 @@ public class MainActivity extends Activity {
     private Button sortButton;
     private SongAdapter libAdapter;
     private final List<Song> shown = new ArrayList<Song>();
+    /** 歌单筛选：空串＝全部歌单。 */
+    private String playlistFilter = "";
+    private String chipSignature = "";
+    private LinearLayout chipsRow, libSelBar;
+    private TextView libSelCount;
 
     // 播放队列
     private ListView queueList;
     private TextView queueInfo, queueEmpty;
     private SongAdapter queueAdapter;
+    private LinearLayout queueSelBar;
+    private TextView queueSelCount;
 
     // 歌词
     private TextView lyricTitle, lyricArtist, lyricState, offsetLabel;
@@ -473,6 +482,17 @@ public class MainActivity extends Activity {
         searchRow.addView(upload);
         page.addView(searchRow);
 
+        // 歌单栏（歌单＝云盘上的一个文件夹，点一下筛选，长按改名/删除）
+        HorizontalScrollView chipsScroll = new HorizontalScrollView(this);
+        chipsScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout.LayoutParams chipsP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        chipsP.topMargin = dp(10);
+        chipsScroll.setLayoutParams(chipsP);
+        chipsRow = row();
+        chipsScroll.addView(chipsRow);
+        page.addView(chipsScroll);
+
         LinearLayout actions = row();
         LinearLayout.LayoutParams actionsP = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -503,6 +523,14 @@ public class MainActivity extends Activity {
         libInfo.setLayoutParams(infoP);
         page.addView(libInfo);
 
+        // 多选管理条（长按列表里的歌出现）
+        libSelBar = buildSelectionBar(false);
+        LinearLayout.LayoutParams selP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        selP.topMargin = dp(10);
+        libSelBar.setLayoutParams(selP);
+        page.addView(libSelBar);
+
         libEmpty = text("还没有歌曲。先在「设置」里连接云盘，再回来点「刷新」。", 13, cDim);
         libEmpty.setGravity(Gravity.CENTER);
         libEmpty.setPadding(dp(20), dp(40), dp(20), dp(40));
@@ -520,19 +548,521 @@ public class MainActivity extends Activity {
         libList.setLayoutParams(listP);
         libList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (libAdapter.isSelecting()) {
+                    libAdapter.toggle(songAt(shown, position));
+                    updateSelectionBars();
+                    return;
+                }
                 playFromLibrary(position);
             }
         });
         libList.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
             public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
-                showLibraryMenu(position);
+                if (libAdapter.isSelecting()) {
+                    showLibraryMenu(position);
+                    return true;
+                }
+                libAdapter.setSelecting(true);
+                libAdapter.toggle(songAt(shown, position));
+                updateSelectionBars();
                 return true;
             }
         });
         libAdapter = new SongAdapter(false);
         libList.setAdapter(libAdapter);
         page.addView(libList);
+        refreshPlaylistChips();
         return page;
+    }
+
+    private static Song songAt(List<Song> list, int position) {
+        if (position < 0 || position >= list.size()) return null;
+        return list.get(position);
+    }
+
+    /** 按当前歌单筛选重建顶部那一排歌单按钮。 */
+    private void refreshPlaylistChips() {
+        if (chipsRow == null) return;
+        List<String> names = new ArrayList<String>();
+        for (int i = 0; i < Store.songs.size(); i++) {
+            String name = Store.songs.get(i).playlist();
+            if (name.length() > 0 && !names.contains(name)) names.add(name);
+        }
+        Collections.sort(names, new Comparator<String>() {
+            public int compare(String a, String b) {
+                return a.compareToIgnoreCase(b);
+            }
+        });
+        if (playlistFilter.length() > 0 && !names.contains(playlistFilter)) playlistFilter = "";
+        String signature = playlistFilter + "|" + names.toString();
+        if (signature.equals(chipSignature)) return;
+        chipSignature = signature;
+
+        chipsRow.removeAllViews();
+        chipsRow.addView(chip("全部歌单", ""));
+        for (int i = 0; i < names.size(); i++) chipsRow.addView(chip(names.get(i), names.get(i)));
+        Button add = button("＋ 新建", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                newPlaylist();
+            }
+        });
+        chipsRow.addView(add);
+    }
+
+    /** 一个歌单按钮：点一下筛选，长按改名 / 删除。 */
+    private View chip(final String label, final String value) {
+        boolean active = playlistFilter.equals(value);
+        TextView chip = text(label, 13, active ? 0xFFFFFFFF : cText);
+        chip.setBackground(round(active ? cAccent : cAlt, 14));
+        chip.setPadding(dp(14), dp(8), dp(14), dp(8));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.rightMargin = dp(8);
+        chip.setLayoutParams(p);
+        chip.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                playlistFilter = value;
+                refreshPlaylistChips();
+                applyFilter();
+            }
+        });
+        if (value.length() > 0) {
+            chip.setOnLongClickListener(new View.OnLongClickListener() {
+                public boolean onLongClick(View v) {
+                    showPlaylistMenu(value);
+                    return true;
+                }
+            });
+        }
+        return chip;
+    }
+
+    private void showPlaylistMenu(final String name) {
+        final String[] items = { "重命名歌单", "删除歌单" };
+        new AlertDialog.Builder(this)
+                .setTitle("歌单：" + name)
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        if (which == 0) renamePlaylist(name);
+                        else confirmDeletePlaylist(name);
+                    }
+                })
+                .show();
+    }
+
+    private void newPlaylist() {
+        final EditText field = input("歌单名", "");
+        new AlertDialog.Builder(this)
+                .setTitle("新建歌单")
+                .setMessage("云盘上会新建一个同名文件夹，上传的歌就放进这个文件夹里。")
+                .setView(field)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("创建", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        final String name = field.getText().toString().trim();
+                        if (Cloud.badName(name)) {
+                            toast("这个名字不能用在文件夹上");
+                            return;
+                        }
+                        runCloud("新建歌单", new CloudTask() {
+                            public void run(String endpoint) throws Exception {
+                                Cloud.ensureDir(endpoint, "/" + name, getCacheDir());
+                            }
+                        });
+                    }
+                })
+                .show();
+    }
+
+    private void renamePlaylist(final String name) {
+        final EditText field = input("新的歌单名", name);
+        new AlertDialog.Builder(this)
+                .setTitle("重命名歌单")
+                .setMessage("会把歌单文件夹里的歌整体搬到新文件夹（服务端直接搬，不重新上传）。")
+                .setView(field)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("改名", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        final String target = field.getText().toString().trim();
+                        if (Cloud.badName(target)) {
+                            toast("这个名字不能用在文件夹上");
+                            return;
+                        }
+                        if (target.equals(name)) return;
+                        runCloud("重命名歌单", new CloudTask() {
+                            public void run(String endpoint) throws Exception {
+                                Cloud.ensureDir(endpoint, "/" + target, getCacheDir());
+                                List<Cloud.Entry> entries = listOfPlaylist(endpoint, name);
+                                List<String> moving = new ArrayList<String>();
+                                for (int i = 0; i < entries.size(); i++) {
+                                    if (!entries.get(i).dir) moving.add(entries.get(i).name);
+                                }
+                                Cloud.moveItems(endpoint, "/" + name, moving, "/" + target);
+                                Cloud.delete(endpoint, "/" + name);
+                            }
+                        });
+                        if (playlistFilter.equals(name)) playlistFilter = target;
+                    }
+                })
+                .show();
+    }
+
+    private void confirmDeletePlaylist(final String name) {
+        new AlertDialog.Builder(this)
+                .setTitle("删除歌单「" + name + "」？")
+                .setMessage("歌单就是云盘上的一个文件夹，删除会把里面的音频和歌词一起删掉，\n"
+                        + "恢复只能自己去云盘的历史记录里找。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("删除", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        runCloud("删除歌单", new CloudTask() {
+                            public void run(String endpoint) throws Exception {
+                                Cloud.delete(endpoint, "/" + name);
+                            }
+                        });
+                        if (playlistFilter.equals(name)) playlistFilter = "";
+                    }
+                })
+                .show();
+    }
+
+    /** 列出某个歌单文件夹里的全部文件（重命名时用）。 */
+    private List<Cloud.Entry> listOfPlaylist(String endpoint, String name) throws Exception {
+        List<Cloud.Entry> all = Cloud.listAll(endpoint);
+        List<Cloud.Entry> out = new ArrayList<Cloud.Entry>();
+        for (int i = 0; i < all.size(); i++) {
+            if (name.equals(Cloud.playlistOf(all.get(i).path))) out.add(all.get(i));
+        }
+        return out;
+    }
+
+    /** 云盘操作统一入口：后台跑，完事重扫曲库。 */
+    private interface CloudTask {
+        void run(String endpoint) throws Exception;
+    }
+
+    private void runCloud(final String label, final CloudTask task) {
+        final String endpoint = Store.endpoint;
+        if (endpoint.length() == 0) {
+            toast("先到「设置」里连接云盘");
+            return;
+        }
+        toast("正在" + label + "…");
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    task.run(endpoint);
+                    toastAsync(label + "完成");
+                    ui.post(new Runnable() {
+                        public void run() {
+                            startScan(false);
+                        }
+                    });
+                } catch (final Exception e) {
+                    toastAsync(label + "失败：" + Util.shorten(e.getMessage()));
+                }
+            }
+        }).start();
+    }
+
+    // ---------------------------------------------------------------- 多选管理
+
+    private SongAdapter adapterOf(boolean forQueue) {
+        return forQueue ? queueAdapter : libAdapter;
+    }
+
+    /** 长按列表后出现的多选管理条。 */
+    private LinearLayout buildSelectionBar(final boolean forQueue) {
+        LinearLayout bar = column();
+        bar.setVisibility(View.GONE);
+        bar.setBackground(round(cAlt, 12));
+        bar.setPadding(dp(12), dp(10), dp(12), dp(10));
+
+        LinearLayout top = row();
+        TextView count = text("已选 0 首", 13, cText);
+        top.addView(count, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        top.addView(button("全选", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                adapterOf(forQueue).selectAll();
+                updateSelectionBars();
+            }
+        }));
+        top.addView(button("取消", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                cancelSelection();
+            }
+        }));
+        bar.addView(top);
+
+        LinearLayout bottom = row();
+        LinearLayout.LayoutParams bottomP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        bottomP.topMargin = dp(8);
+        bottom.setLayoutParams(bottomP);
+        bottom.addView(growButton("下载", true, new View.OnClickListener() {
+            public void onClick(View v) {
+                askDownloadScope(adapterOf(forQueue).pickedSongs());
+            }
+        }));
+        bottom.addView(growButton("加入歌单", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                addSelectionToPlaylist(adapterOf(forQueue).pickedSongs());
+            }
+        }));
+        bottom.addView(growButton(forQueue ? "移除" : "删除", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                List<Song> picked = adapterOf(forQueue).pickedSongs();
+                if (forQueue) removeSelectedFromQueue(picked);
+                else confirmDeleteMany(picked);
+            }
+        }));
+        bar.addView(bottom);
+
+        if (forQueue) queueSelCount = count;
+        else libSelCount = count;
+        return bar;
+    }
+
+    private Button growButton(String label, boolean primary, View.OnClickListener click) {
+        Button b = button(label, primary, click);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(38), 1f);
+        p.rightMargin = dp(8);
+        b.setLayoutParams(p);
+        return b;
+    }
+
+    private void updateSelectionBars() {
+        if (libSelBar != null && libAdapter != null) {
+            boolean on = libAdapter.isSelecting();
+            libSelBar.setVisibility(on ? View.VISIBLE : View.GONE);
+            if (on && libSelCount != null)
+                libSelCount.setText("已选 " + libAdapter.pickedCount() + " 首");
+        }
+        if (queueSelBar != null && queueAdapter != null) {
+            boolean on = queueAdapter.isSelecting();
+            queueSelBar.setVisibility(on ? View.VISIBLE : View.GONE);
+            if (on && queueSelCount != null)
+                queueSelCount.setText("已选 " + queueAdapter.pickedCount() + " 首");
+        }
+    }
+
+    private void cancelSelection() {
+        if (libAdapter != null) libAdapter.setSelecting(false);
+        if (queueAdapter != null) queueAdapter.setSelecting(false);
+        updateSelectionBars();
+    }
+
+    /** 下载选中项：先问下音频 / 歌词 / 两者，再后台逐个下到系统「下载」目录。 */
+    private void askDownloadScope(final List<Song> songs) {
+        if (songs == null || songs.isEmpty()) {
+            toast("先选中歌曲");
+            return;
+        }
+        final String[] items = { "音频 + 歌词", "只下音频", "只下歌词" };
+        new AlertDialog.Builder(this)
+                .setTitle("下载 " + songs.size() + " 首")
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        startDownload(songs, which != 2, which != 1);
+                    }
+                })
+                .show();
+    }
+
+    private void startDownload(final List<Song> songs, final boolean audio, final boolean lyrics) {
+        if (!ensureStoragePermission()) return;
+        final String endpoint = Store.endpoint;
+        toast("开始下载 " + songs.size() + " 首到 " + Saver.folderHint());
+        new Thread(new Runnable() {
+            public void run() {
+                int ok = 0;
+                int failed = 0;
+                int noLyric = 0;
+                for (int i = 0; i < songs.size(); i++) {
+                    Song song = songs.get(i);
+                    try {
+                        if (audio) {
+                            File temp = new File(getCacheDir(), "dl-audio.tmp");
+                            Cloud.download(endpoint, song.cloudPath, temp, null);
+                            Saver.save(MainActivity.this, temp, song.fileName, mimeOf(song.fileName));
+                            temp.delete();
+                        }
+                        if (lyrics) {
+                            if (song.hasLyrics()) {
+                                File temp = new File(getCacheDir(), "dl-lyric.tmp");
+                                Cloud.download(endpoint, song.lyricPath, temp, null);
+                                Saver.save(MainActivity.this, temp, lrcName(song), "text/plain");
+                                temp.delete();
+                            } else {
+                                noLyric++;
+                            }
+                        }
+                        ok++;
+                    } catch (Exception e) {
+                        failed++;
+                    }
+                }
+                final int okCount = ok;
+                final int badCount = failed;
+                final int skipCount = noLyric;
+                ui.post(new Runnable() {
+                    public void run() {
+                        cancelSelection();
+                        String message = "下载完成：成功 " + okCount + " 首";
+                        if (badCount > 0) message += "，失败 " + badCount + " 首";
+                        if (lyrics && skipCount > 0) message += "（" + skipCount + " 首没有歌词）";
+                        toast(message + "\n位置：" + Saver.folderHint());
+                    }
+                });
+            }
+        }).start();
+    }
+
+    /** 老系统写公共下载目录需要存储权限；Android 10 及以上走 MediaStore，不需要。 */
+    private boolean ensureStoragePermission() {
+        if (Build.VERSION.SDK_INT >= 29) return true;
+        if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) return true;
+        requestPermissions(new String[] { android.Manifest.permission.WRITE_EXTERNAL_STORAGE }, REQ_STORAGE);
+        toast("给云雀「存储」权限后，再点一次下载");
+        return false;
+    }
+
+    private static String lrcName(Song song) {
+        String name = song.fileName;
+        int dot = name.lastIndexOf('.');
+        return (dot > 0 ? name.substring(0, dot) : name) + ".lrc";
+    }
+
+    private static String mimeOf(String name) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".m4a") || lower.endsWith(".mp4")) return "audio/mp4";
+        if (lower.endsWith(".aac")) return "audio/aac";
+        if (lower.endsWith(".wav")) return "audio/wav";
+        if (lower.endsWith(".wma")) return "audio/x-ms-wma";
+        if (lower.endsWith(".flac")) return "audio/flac";
+        if (lower.endsWith(".ogg") || lower.endsWith(".oga")) return "audio/ogg";
+        if (lower.endsWith(".opus")) return "audio/opus";
+        return "audio/mpeg";
+    }
+
+    /** 把选中的歌复制进另一个歌单（一个歌单＝云盘上一个文件夹）。 */
+    private void addSelectionToPlaylist(final List<Song> songs) {
+        if (songs == null || songs.isEmpty()) {
+            toast("先选中歌曲");
+            return;
+        }
+        final List<String> names = playlistNames();
+        names.add("＋ 新建歌单…");
+        new AlertDialog.Builder(this)
+                .setTitle("把 " + songs.size() + " 首加入歌单")
+                .setItems(names.toArray(new String[0]), new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        if (which == names.size() - 1) newPlaylistFor(songs);
+                        else copyToPlaylist(songs, names.get(which));
+                    }
+                })
+                .show();
+    }
+
+    private List<String> playlistNames() {
+        List<String> names = new ArrayList<String>();
+        for (int i = 0; i < Store.songs.size(); i++) {
+            String name = Store.songs.get(i).playlist();
+            if (name.length() > 0 && !names.contains(name)) names.add(name);
+        }
+        Collections.sort(names, new Comparator<String>() {
+            public int compare(String a, String b) {
+                return a.compareToIgnoreCase(b);
+            }
+        });
+        return names;
+    }
+
+    private void newPlaylistFor(final List<Song> songs) {
+        final EditText field = input("歌单名", "");
+        new AlertDialog.Builder(this)
+                .setTitle("新建歌单")
+                .setView(field)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("创建并加入", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        String name = field.getText().toString().trim();
+                        if (Cloud.badName(name)) {
+                            toast("这个名字不能用在文件夹上");
+                            return;
+                        }
+                        copyToPlaylist(songs, name);
+                    }
+                })
+                .show();
+    }
+
+    private void copyToPlaylist(final List<Song> songs, final String target) {
+        runCloud("加入歌单", new CloudTask() {
+            public void run(String endpoint) throws Exception {
+                Cloud.ensureDir(endpoint, "/" + target, getCacheDir());
+                for (int i = 0; i < songs.size(); i++) {
+                    Song song = songs.get(i);
+                    String dir = song.playlist();
+                    List<String> items = new ArrayList<String>();
+                    items.add(song.fileName);
+                    if (song.hasLyrics()) items.add(lrcName(song));
+                    Cloud.copyItems(endpoint, dir.length() == 0 ? "/" : "/" + dir, items, "/" + target);
+                }
+            }
+        });
+        cancelSelection();
+    }
+
+    /** 从云盘删除选中的歌（连同同名歌词），会二次确认。 */
+    private void confirmDeleteMany(final List<Song> songs) {
+        if (songs == null || songs.isEmpty()) {
+            toast("先选中歌曲");
+            return;
+        }
+        if (!Cloud.canDelete(Store.endpoint)) {
+            toast("删除云端文件需要「资料库 API 令牌」，到设置里填上即可");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("从云盘删除 " + songs.size() + " 首？")
+                .setMessage("这是直接从云盘上删，连同同名歌词一起删掉；\n"
+                        + "删了就找不回来了，只能自己去云盘的历史记录里翻。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("删除", new DialogInterface.OnClickListener() {
+                    public void onClick(DialogInterface dialog, int which) {
+                        final List<String> paths = new ArrayList<String>();
+                        for (int i = 0; i < songs.size(); i++) {
+                            paths.add(songs.get(i).cloudPath);
+                            if (songs.get(i).hasLyrics()) paths.add(songs.get(i).lyricPath);
+                        }
+                        runCloud("删除 " + songs.size() + " 首", new CloudTask() {
+                            public void run(String endpoint) throws Exception {
+                                Cloud.deleteAll(endpoint, paths);
+                            }
+                        });
+                        cancelSelection();
+                    }
+                })
+                .show();
+    }
+
+    private void removeSelectedFromQueue(List<Song> songs) {
+        if (songs == null || songs.isEmpty()) {
+            toast("先选中歌曲");
+            return;
+        }
+        PlayerService service = PlayerService.instance;
+        if (service != null) service.removeMany(songs);
+        else {
+            Store.queue.removeAll(songs);
+            Store.saveQueue(this);
+        }
+        cancelSelection();
+        refreshQueue();
+        refreshNowPlaying();
     }
 
     private void showSortDialog() {
@@ -561,6 +1091,7 @@ public class MainActivity extends Activity {
         shown.clear();
         for (int i = 0; i < Store.songs.size(); i++) {
             Song s = Store.songs.get(i);
+            if (playlistFilter.length() > 0 && !playlistFilter.equals(s.playlist())) continue;
             if (query.length() > 0) {
                 String hay = (s.title + " " + s.artist + " " + s.fileName).toLowerCase(Locale.ROOT);
                 if (!hay.contains(query)) continue;
@@ -569,10 +1100,16 @@ public class MainActivity extends Activity {
         }
         sortSongs(shown);
         libAdapter.setData(shown);
+        refreshPlaylistChips();
         if (libEmpty != null) {
             boolean empty = shown.isEmpty();
             libEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
             libList.setVisibility(empty ? View.GONE : View.VISIBLE);
+            if (empty) {
+                libEmpty.setText(Store.songs.isEmpty()
+                        ? "还没有歌曲。先在「设置」里连接云盘，再回来点「刷新」。"
+                        : "这个歌单里还没有歌。长按列表里的歌进入多选，可以「加入歌单」。");
+            }
         }
         updateSortButton();
         updateLibraryInfo(null);
@@ -777,12 +1314,19 @@ public class MainActivity extends Activity {
         }));
         page.addView(head);
 
-        TextView tips = text("点歌曲立即播放；长按可移除、上移下移或设为下一首。", 12, cDim);
+        TextView tips = text("点歌曲立即播放；长按进入多选，可以批量下载、加入歌单、移除。", 12, cDim);
         LinearLayout.LayoutParams tipsP = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tipsP.topMargin = dp(8);
         tips.setLayoutParams(tipsP);
         page.addView(tips);
+
+        queueSelBar = buildSelectionBar(true);
+        LinearLayout.LayoutParams selP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        selP.topMargin = dp(8);
+        queueSelBar.setLayoutParams(selP);
+        page.addView(queueSelBar);
 
         queueEmpty = text("播放队列是空的。到「音乐库」点歌名就会开始播放并加入队列。", 13, cDim);
         queueEmpty.setGravity(Gravity.CENTER);
@@ -801,13 +1345,24 @@ public class MainActivity extends Activity {
         queueList.setLayoutParams(listP);
         queueList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (queueAdapter.isSelecting()) {
+                    queueAdapter.toggle(songAt(Store.queue, position));
+                    updateSelectionBars();
+                    return;
+                }
                 PlayerService service = PlayerService.instance;
                 if (service != null) service.playAt(position);
             }
         });
         queueList.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
             public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
-                showQueueMenu(position);
+                if (queueAdapter.isSelecting()) {
+                    showQueueMenu(position);
+                    return true;
+                }
+                queueAdapter.setSelecting(true);
+                queueAdapter.toggle(songAt(Store.queue, position));
+                updateSelectionBars();
                 return true;
             }
         });
@@ -1909,6 +2464,14 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** 上传目标：当前选中的歌单；没选歌单就用「默认歌单」；都没有才传根目录。 */
+    private String uploadTargetDir() {
+        if (playlistFilter.length() > 0) return "/" + playlistFilter;
+        List<String> names = playlistNames();
+        if (names.contains("默认歌单")) return "/默认歌单";
+        return "/";
+    }
+
     private void uploadFiles(final List<Uri> uris) {
         if (uris == null || uris.isEmpty()) return;
         final String endpoint = Store.endpoint;
@@ -1921,20 +2484,28 @@ public class MainActivity extends Activity {
             return;
         }
         uploading = true;
-        toast("开始上传 " + uris.size() + " 个文件");
+        final String target = uploadTargetDir();
+        toast("开始上传 " + uris.size() + " 个文件到"
+                + ("/".equals(target) ? "云盘根目录" : "歌单「" + target.substring(1) + "」"));
         new Thread(new Runnable() {
             public void run() {
                 int ok = 0, fail = 0;
                 String lastError = "";
+                boolean dirReady = "/".equals(target);
+                final String targetDir = target;
                 for (int i = 0; i < uris.size(); i++) {
                     final int index = i + 1;
                     final String name = displayName(uris.get(i));
                     postInfo("正在上传 " + index + "/" + uris.size() + "：" + name);
                     File temp = null;
                     try {
+                        if (!dirReady) {
+                            Cloud.ensureDir(endpoint, targetDir, getCacheDir());
+                            dirReady = true;
+                        }
                         temp = copyToUploadDir(uris.get(i));
                         final long total = temp.length();
-                        Cloud.upload(endpoint, temp, "/", new Util.Progress() {
+                        Cloud.upload(endpoint, temp, targetDir, new Util.Progress() {
                             private long lastPercent = -5;
 
                             public void onProgress(long done, long totalBytes) {
@@ -2267,6 +2838,9 @@ public class MainActivity extends Activity {
         private final List<Song> data = new ArrayList<Song>();
         /** 音乐库列表不高亮正在播放的那首（那是播放队列的事）。 */
         private final boolean highlightCurrent;
+        /** 多选管理：长按列表进入，之后点一行切换选中。 */
+        private boolean selecting;
+        private final Set<String> picked = new java.util.HashSet<String>();
 
         SongAdapter(boolean highlightCurrent) {
             this.highlightCurrent = highlightCurrent;
@@ -2276,6 +2850,36 @@ public class MainActivity extends Activity {
             data.clear();
             data.addAll(source);
             notifyDataSetChanged();
+        }
+
+        boolean isSelecting() { return selecting; }
+
+        void setSelecting(boolean value) {
+            selecting = value;
+            picked.clear();
+            notifyDataSetChanged();
+        }
+
+        int pickedCount() { return picked.size(); }
+
+        void toggle(Song song) {
+            if (song == null) return;
+            if (!picked.remove(song.cloudPath)) picked.add(song.cloudPath);
+            notifyDataSetChanged();
+        }
+
+        void selectAll() {
+            for (int i = 0; i < data.size(); i++) picked.add(data.get(i).cloudPath);
+            notifyDataSetChanged();
+        }
+
+        List<Song> pickedSongs() {
+            List<Song> out = new ArrayList<Song>();
+            for (int i = 0; i < data.size(); i++) {
+                Song s = data.get(i);
+                if (picked.contains(s.cloudPath)) out.add(s);
+            }
+            return out;
         }
 
         public int getCount() { return data.size(); }
@@ -2295,8 +2899,10 @@ public class MainActivity extends Activity {
             Song song = data.get(position);
             Song current = Store.current();
             boolean active = highlightCurrent && current != null && current.cloudPath.equals(song.cloudPath);
-            holder.index.setText(String.valueOf(position + 1));
-            holder.index.setTextColor(active ? cAccent : cDim);
+            boolean pickedRow = selecting && picked.contains(song.cloudPath);
+            view.setBackgroundColor(pickedRow ? cAlt : cSurface);
+            holder.index.setText(pickedRow ? "✓" : String.valueOf(position + 1));
+            holder.index.setTextColor(pickedRow ? cAccent : (active ? cAccent : cDim));
             holder.title.setText(song.title);
             holder.title.setTextColor(active ? cAccent : cText);
             holder.bar.setVisibility(active ? View.VISIBLE : View.INVISIBLE);

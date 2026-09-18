@@ -316,6 +316,29 @@ public class PlayerService extends Service {
         notifyChanged();
     }
 
+    /** 批量移除选中的歌（多选管理用）。 */
+    public void removeMany(List<Song> songs) {
+        if (songs == null || songs.isEmpty()) return;
+        boolean removedCurrent = false;
+        for (int i = 0; i < songs.size(); i++) {
+            int at = indexOf(songs.get(i).cloudPath);
+            if (at < 0) continue;
+            Store.queue.remove(at);
+            if (at < Store.index) Store.index--;
+            else if (at == Store.index) removedCurrent = true;
+        }
+        if (Store.queue.isEmpty()) {
+            Store.index = -1;
+            if (removedCurrent) stopPlayback();
+        } else if (removedCurrent) {
+            if (Store.index >= Store.queue.size()) Store.index = Store.queue.size() - 1;
+            if (Store.index < 0) Store.index = 0;
+            playAt(Store.index);
+        }
+        Store.saveQueue(this);
+        notifyChanged();
+    }
+
     public void clearQueue() {
         Store.queue.clear();
         Store.index = -1;
