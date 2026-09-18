@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
     private static final int REQ_STORAGE = 103;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.20";
+    public static final String VERSION = "3.3.21";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -95,6 +95,7 @@ public class MainActivity extends Activity {
     private boolean inPlaylist;
     private LinearLayout libHome, libFolders, libListPanel, libHeadRow, libSelHead, libSelActions, libSearchRow;
     private TextView libTitle, libSelCount, libHomeInfo;
+    private Button libSelAll;
 
     // 播放队列
     private ListView queueList;
@@ -103,6 +104,7 @@ public class MainActivity extends Activity {
     private LinearLayout queueHeadRow, queueSelHead, queueSelActions;
     private View queueTipsRow;
     private TextView queueSelCount;
+    private Button queueSelAll;
 
     // 歌词
     private TextView lyricTitle, lyricArtist, lyricState, offsetLabel;
@@ -533,12 +535,12 @@ public class MainActivity extends Activity {
         libSelCount = text("已选 0 首", 13, cText);
         libSelHead.addView(libSelCount, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        libSelHead.addView(button("全选", false, new View.OnClickListener() {
+        libSelAll = button("全选", false, new View.OnClickListener() {
             public void onClick(View v) {
-                libAdapter.selectAll();
-                updateSelectionBars();
+                toggleSelectAll(libAdapter, libSelAll);
             }
-        }));
+        });
+        libSelHead.addView(libSelAll);
         libListPanel.addView(libSelHead);
 
         // 第二行：搜索 + 排序（多选时换成：下载 / 加入歌单 / 删除）
@@ -916,10 +918,24 @@ public class MainActivity extends Activity {
     }
 
     private void updateSelectionBars() {
-        if (libSelCount != null && libAdapter != null)
+        if (libSelCount != null && libAdapter != null) {
             libSelCount.setText("已选 " + libAdapter.pickedCount() + " 首");
-        if (queueSelCount != null && queueAdapter != null)
+            if (libSelAll != null)
+                libSelAll.setText(libAdapter.allPicked() ? "取消全选" : "全选");
+        }
+        if (queueSelCount != null && queueAdapter != null) {
             queueSelCount.setText("已选 " + queueAdapter.pickedCount() + " 首");
+            if (queueSelAll != null)
+                queueSelAll.setText(queueAdapter.allPicked() ? "取消全选" : "全选");
+        }
+    }
+
+    /** 全选 / 取消全选：已经全勾上了就再点一次全部取消。 */
+    private void toggleSelectAll(SongAdapter adapter, Button button) {
+        if (adapter == null) return;
+        if (adapter.allPicked()) adapter.clearPicked();
+        else adapter.selectAll();
+        updateSelectionBars();
     }
 
     private void cancelSelection() {
@@ -1416,12 +1432,12 @@ public class MainActivity extends Activity {
         queueSelCount = text("已选 0 首", 13, cText);
         queueSelHead.addView(queueSelCount, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        queueSelHead.addView(button("全选", false, new View.OnClickListener() {
+        queueSelAll = button("全选", false, new View.OnClickListener() {
             public void onClick(View v) {
-                queueAdapter.selectAll();
-                updateSelectionBars();
+                toggleSelectAll(queueAdapter, queueSelAll);
             }
-        }));
+        });
+        queueSelHead.addView(queueSelAll);
         page.addView(queueSelHead);
 
         TextView tips = text("点歌曲立即播放；长按进入多选，可以批量下载、加入歌单、移除。", 12, cDim);
@@ -2999,6 +3015,20 @@ public class MainActivity extends Activity {
         void selectAll() {
             for (int i = 0; i < data.size(); i++) picked.add(data.get(i).cloudPath);
             notifyDataSetChanged();
+        }
+
+        void clearPicked() {
+            picked.clear();
+            notifyDataSetChanged();
+        }
+
+        /** 当前列表是不是全勾上了（「取消全选」用）。 */
+        boolean allPicked() {
+            if (data.isEmpty()) return false;
+            for (int i = 0; i < data.size(); i++) {
+                if (!picked.contains(data.get(i).cloudPath)) return false;
+            }
+            return true;
         }
 
         List<Song> pickedSongs() {
