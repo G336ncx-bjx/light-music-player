@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
     private static final int REQ_STORAGE = 103;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.19";
+    public static final String VERSION = "3.3.20";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -91,15 +91,17 @@ public class MainActivity extends Activity {
     private final List<Song> shown = new ArrayList<Song>();
     /** 歌单筛选：空串＝全部歌单。 */
     private String playlistFilter = "";
-    private String chipSignature = "";
-    private LinearLayout chipsRow, libSelBar;
-    private TextView libSelCount;
+    /** 音乐库分两层：false＝歌单（文件夹）列表，true＝某个歌单里的歌曲列表。 */
+    private boolean inPlaylist;
+    private LinearLayout libHome, libFolders, libListPanel, libHeadRow, libSelHead, libSelActions, libSearchRow;
+    private TextView libTitle, libSelCount, libHomeInfo;
 
     // 播放队列
     private ListView queueList;
     private TextView queueInfo, queueEmpty;
     private SongAdapter queueAdapter;
-    private LinearLayout queueSelBar;
+    private LinearLayout queueHeadRow, queueSelHead, queueSelActions;
+    private View queueTipsRow;
     private TextView queueSelCount;
 
     // 歌词
@@ -215,6 +217,10 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (tabIndex != 0) {
             selectTab(0);
+            return;
+        }
+        if (inPlaylist) {
+            backToFolders();
             return;
         }
         super.onBackPressed();
@@ -450,7 +456,97 @@ public class MainActivity extends Activity {
         LinearLayout page = column();
         page.setPadding(dp(12), dp(12), dp(12), 0);
 
-        LinearLayout searchRow = row();
+        // ================= 第一层：歌单（云盘上的文件夹） =================
+        libHome = column();
+        LinearLayout homeHead = row();
+        TextView homeTitle = text("音乐库", 18, cText);
+        homeTitle.setTypeface(null, Typeface.BOLD);
+        homeHead.addView(homeTitle, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        homeHead.addView(button("刷新", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                startScan(false);
+            }
+        }));
+        libHome.addView(homeHead);
+        TextView homeHint = text("点歌单进去看歌；长按歌单可以改名 / 删除。", 12, cDim);
+        LinearLayout.LayoutParams homeHintP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        homeHintP.topMargin = dp(6);
+        homeHint.setLayoutParams(homeHintP);
+        libHome.addView(homeHint);
+
+        libFolders = column();
+        ScrollView folderScroll = new ScrollView(this);
+        folderScroll.setVerticalScrollBarEnabled(false);
+        folderScroll.addView(libFolders);
+        LinearLayout.LayoutParams folderP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        folderP.topMargin = dp(12);
+        libHome.addView(folderScroll, folderP);
+
+        libHomeInfo = text("", 12, cDim);
+        LinearLayout.LayoutParams homeInfoP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        homeInfoP.topMargin = dp(10);
+        libHomeInfo.setLayoutParams(homeInfoP);
+        libHome.addView(libHomeInfo);
+        page.addView(libHome, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        // ================= 第二层：某个歌单里的歌曲 =================
+        libListPanel = column();
+        libListPanel.setVisibility(View.GONE);
+
+        // 第一行：返回 + 歌单名 + 播放 + 上传（多选时换成：完成 + 已选 + 全选）
+        libHeadRow = row();
+        libHeadRow.addView(button("返回", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                backToFolders();
+            }
+        }));
+        libTitle = text("全部歌曲", 15, cText);
+        libTitle.setTypeface(null, Typeface.BOLD);
+        libTitle.setSingleLine(true);
+        libTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        libHeadRow.addView(libTitle, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        libHeadRow.addView(button("播放", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                playAll();
+            }
+        }));
+        libHeadRow.addView(button("上传", true, new View.OnClickListener() {
+            public void onClick(View v) {
+                pickFiles();
+            }
+        }));
+        libListPanel.addView(libHeadRow);
+
+        libSelHead = row();
+        libSelHead.setVisibility(View.GONE);
+        libSelHead.addView(button("完成", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                setLibSelecting(false);
+            }
+        }));
+        libSelCount = text("已选 0 首", 13, cText);
+        libSelHead.addView(libSelCount, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        libSelHead.addView(button("全选", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                libAdapter.selectAll();
+                updateSelectionBars();
+            }
+        }));
+        libListPanel.addView(libSelHead);
+
+        // 第二行：搜索 + 排序（多选时换成：下载 / 加入歌单 / 删除）
+        libSearchRow = row();
+        LinearLayout.LayoutParams searchRowP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        searchRowP.topMargin = dp(8);
+        libSearchRow.setLayoutParams(searchRowP);
         search = new EditText(this);
         search.setHint("搜索歌名、歌手");
         search.setHintTextColor(cDim);
@@ -458,7 +554,7 @@ public class MainActivity extends Activity {
         search.setTextSize(14);
         search.setSingleLine(true);
         search.setBackground(round(cAlt, 12));
-        search.setPadding(dp(14), dp(10), dp(14), dp(10));
+        search.setPadding(dp(14), dp(8), dp(14), dp(8));
         LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(0, dp(42), 1f);
         sp.rightMargin = dp(8);
         search.setLayoutParams(sp);
@@ -469,72 +565,49 @@ public class MainActivity extends Activity {
                 applyFilter();
             }
         });
-        searchRow.addView(search);
-        Button upload = button("上传", true, new View.OnClickListener() {
-            public void onClick(View v) {
-                pickFiles();
-            }
-        });
-        LinearLayout.LayoutParams uploadP = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(42));
-        uploadP.rightMargin = 0;
-        upload.setLayoutParams(uploadP);
-        searchRow.addView(upload);
-        page.addView(searchRow);
-
-        // 歌单栏（歌单＝云盘上的一个文件夹，点一下筛选，长按改名/删除）
-        HorizontalScrollView chipsScroll = new HorizontalScrollView(this);
-        chipsScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout.LayoutParams chipsP = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        chipsP.topMargin = dp(10);
-        chipsScroll.setLayoutParams(chipsP);
-        chipsRow = row();
-        chipsScroll.addView(chipsRow);
-        page.addView(chipsScroll);
-
-        LinearLayout actions = row();
-        LinearLayout.LayoutParams actionsP = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        actionsP.topMargin = dp(10);
-        actions.setLayoutParams(actionsP);
-        actions.addView(wideButton("播放全部", false, new View.OnClickListener() {
-            public void onClick(View v) {
-                playAll();
-            }
-        }));
-        sortButton = wideButton("排序：歌名", false, new View.OnClickListener() {
+        libSearchRow.addView(search);
+        sortButton = button("排序", false, new View.OnClickListener() {
             public void onClick(View v) {
                 showSortDialog();
             }
         });
-        actions.addView(sortButton);
-        actions.addView(wideButton("刷新", false, new View.OnClickListener() {
+        libSearchRow.addView(sortButton);
+        libListPanel.addView(libSearchRow);
+
+        libSelActions = row();
+        libSelActions.setVisibility(View.GONE);
+        LinearLayout.LayoutParams selActionsP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        selActionsP.topMargin = dp(8);
+        libSelActions.setLayoutParams(selActionsP);
+        libSelActions.addView(growButton("下载", true, new View.OnClickListener() {
             public void onClick(View v) {
-                startScan(false);
+                askDownloadScope(libAdapter.pickedSongs());
             }
         }));
-        page.addView(actions);
+        libSelActions.addView(growButton("加入歌单", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                addSelectionToPlaylist(libAdapter.pickedSongs());
+            }
+        }));
+        libSelActions.addView(growButton("删除", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                confirmDeleteMany(libAdapter.pickedSongs());
+            }
+        }));
+        libListPanel.addView(libSelActions);
 
         libInfo = text("", 12, cDim);
         LinearLayout.LayoutParams infoP = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        infoP.topMargin = dp(10);
+        infoP.topMargin = dp(8);
         libInfo.setLayoutParams(infoP);
-        page.addView(libInfo);
-
-        // 多选管理条（长按列表里的歌出现）
-        libSelBar = buildSelectionBar(false);
-        LinearLayout.LayoutParams selP = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        selP.topMargin = dp(10);
-        libSelBar.setLayoutParams(selP);
-        page.addView(libSelBar);
+        libListPanel.addView(libInfo);
 
         libEmpty = text("还没有歌曲。先在「设置」里连接云盘，再回来点「刷新」。", 13, cDim);
         libEmpty.setGravity(Gravity.CENTER);
         libEmpty.setPadding(dp(20), dp(40), dp(20), dp(40));
-        page.addView(libEmpty, new LinearLayout.LayoutParams(
+        libListPanel.addView(libEmpty, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         libList = new ListView(this);
@@ -544,7 +617,7 @@ public class MainActivity extends Activity {
         libList.setSelector(new android.graphics.drawable.ColorDrawable(cAlt));
         LinearLayout.LayoutParams listP = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        listP.topMargin = dp(10);
+        listP.topMargin = dp(8);
         libList.setLayoutParams(listP);
         libList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
@@ -562,7 +635,7 @@ public class MainActivity extends Activity {
                     showLibraryMenu(position);
                     return true;
                 }
-                libAdapter.setSelecting(true);
+                setLibSelecting(true);
                 libAdapter.toggle(songAt(shown, position));
                 updateSelectionBars();
                 return true;
@@ -570,8 +643,9 @@ public class MainActivity extends Activity {
         });
         libAdapter = new SongAdapter(false);
         libList.setAdapter(libAdapter);
-        page.addView(libList);
-        refreshPlaylistChips();
+        libListPanel.addView(libList);
+        page.addView(libListPanel, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         return page;
     }
 
@@ -580,61 +654,116 @@ public class MainActivity extends Activity {
         return list.get(position);
     }
 
-    /** 按当前歌单筛选重建顶部那一排歌单按钮。 */
-    private void refreshPlaylistChips() {
-        if (chipsRow == null) return;
-        List<String> names = new ArrayList<String>();
+    /** 重建第一层的歌单（文件夹）列表。 */
+    private void refreshFolderRows() {
+        if (libFolders == null) return;
+        libFolders.removeAllViews();
+
+        Map<String, Integer> counts = new java.util.LinkedHashMap<String, Integer>();
         for (int i = 0; i < Store.songs.size(); i++) {
             String name = Store.songs.get(i).playlist();
-            if (name.length() > 0 && !names.contains(name)) names.add(name);
+            if (name.length() == 0) continue;
+            Integer have = counts.get(name);
+            counts.put(name, have == null ? 1 : have + 1);
         }
+        List<String> names = new ArrayList<String>(counts.keySet());
         Collections.sort(names, new Comparator<String>() {
             public int compare(String a, String b) {
                 return a.compareToIgnoreCase(b);
             }
         });
-        if (playlistFilter.length() > 0 && !names.contains(playlistFilter)) playlistFilter = "";
-        String signature = playlistFilter + "|" + names.toString();
-        if (signature.equals(chipSignature)) return;
-        chipSignature = signature;
 
-        chipsRow.removeAllViews();
-        chipsRow.addView(chip("全部歌单", ""));
-        for (int i = 0; i < names.size(); i++) chipsRow.addView(chip(names.get(i), names.get(i)));
-        Button add = button("＋ 新建", false, new View.OnClickListener() {
-            public void onClick(View v) {
-                newPlaylist();
-            }
-        });
-        chipsRow.addView(add);
+        libFolders.addView(folderRow("全部歌曲", Store.songs.size() + " 首", "", false));
+        for (int i = 0; i < names.size(); i++) {
+            String name = names.get(i);
+            libFolders.addView(folderRow(name, counts.get(name) + " 首", name, false));
+        }
+        libFolders.addView(folderRow("＋ 新建歌单", "云盘上会新建一个同名文件夹", null, true));
     }
 
-    /** 一个歌单按钮：点一下筛选，长按改名 / 删除。 */
-    private View chip(final String label, final String value) {
-        boolean active = playlistFilter.equals(value);
-        TextView chip = text(label, 13, active ? 0xFFFFFFFF : cText);
-        chip.setBackground(round(active ? cAccent : cAlt, 14));
-        chip.setPadding(dp(14), dp(8), dp(14), dp(8));
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        p.rightMargin = dp(8);
-        chip.setLayoutParams(p);
-        chip.setOnClickListener(new View.OnClickListener() {
+    /** 一行「文件夹」：图标 + 名字 + 说明 + 右箭头；value 为 null 表示「新建歌单」那一行。 */
+    private View folderRow(final String label, String subtitle, final String value, boolean create) {
+        LinearLayout r = row();
+        r.setBackground(round(cSurface, 12));
+        r.setPadding(dp(12), dp(14), dp(12), dp(14));
+        LinearLayout.LayoutParams rowP = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowP.bottomMargin = dp(8);
+        r.setLayoutParams(rowP);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_folder);
+        r.addView(icon, new LinearLayout.LayoutParams(dp(22), dp(22)));
+
+        LinearLayout middle = column();
+        LinearLayout.LayoutParams middleP = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        middleP.leftMargin = dp(12);
+        TextView name = text(label, 15, create ? cAccent : cText);
+        name.setSingleLine(true);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        middle.addView(name);
+        if (subtitle != null) middle.addView(text(subtitle, 12, cDim));
+        r.addView(middle, middleP);
+
+        if (!create) {
+            ImageView chevron = new ImageView(this);
+            chevron.setImageResource(R.drawable.ic_chevron);
+            r.addView(chevron, new LinearLayout.LayoutParams(dp(16), dp(16)));
+        }
+
+        r.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                playlistFilter = value;
-                refreshPlaylistChips();
-                applyFilter();
+                if (value == null) newPlaylist();
+                else openPlaylist(value);
             }
         });
-        if (value.length() > 0) {
-            chip.setOnLongClickListener(new View.OnLongClickListener() {
+        if (value != null && value.length() > 0) {
+            r.setOnLongClickListener(new View.OnLongClickListener() {
                 public boolean onLongClick(View v) {
                     showPlaylistMenu(value);
                     return true;
                 }
             });
         }
-        return chip;
+        return r;
+    }
+
+    /** 进某个歌单看歌；value 为空串＝「全部歌曲」。 */
+    private void openPlaylist(String value) {
+        playlistFilter = value;
+        inPlaylist = true;
+        if (libHome != null) libHome.setVisibility(View.GONE);
+        if (libListPanel != null) libListPanel.setVisibility(View.VISIBLE);
+        if (libTitle != null) libTitle.setText(value.length() == 0 ? "全部歌曲" : value);
+        if (search != null) search.setText("");
+        setLibSelecting(false);
+        applyFilter();
+    }
+
+    /** 回到第一层的歌单列表。 */
+    private void backToFolders() {
+        setLibSelecting(false);
+        inPlaylist = false;
+        playlistFilter = "";
+        if (libListPanel != null) libListPanel.setVisibility(View.GONE);
+        if (libHome != null) libHome.setVisibility(View.VISIBLE);
+        if (search != null) search.setText("");
+        refreshFolderRows();
+    }
+
+    /**
+     * 进 / 出多选：把「标题行 + 搜索行」换成「已选 + 全选」和三个批量操作，
+     * 行数不变，所以进多选不会少看几首歌。
+     */
+    private void setLibSelecting(boolean on) {
+        if (libAdapter == null) return;
+        libAdapter.setSelecting(on);
+        if (libHeadRow != null) libHeadRow.setVisibility(on ? View.GONE : View.VISIBLE);
+        if (libSearchRow != null) libSearchRow.setVisibility(on ? View.GONE : View.VISIBLE);
+        if (libSelHead != null) libSelHead.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (libSelActions != null) libSelActions.setVisibility(on ? View.VISIBLE : View.GONE);
+        updateSelectionBars();
     }
 
     private void showPlaylistMenu(final String name) {
@@ -767,63 +896,6 @@ public class MainActivity extends Activity {
 
     // ---------------------------------------------------------------- 多选管理
 
-    private SongAdapter adapterOf(boolean forQueue) {
-        return forQueue ? queueAdapter : libAdapter;
-    }
-
-    /** 长按列表后出现的多选管理条。 */
-    private LinearLayout buildSelectionBar(final boolean forQueue) {
-        LinearLayout bar = column();
-        bar.setVisibility(View.GONE);
-        bar.setBackground(round(cAlt, 12));
-        bar.setPadding(dp(12), dp(10), dp(12), dp(10));
-
-        LinearLayout top = row();
-        TextView count = text("已选 0 首", 13, cText);
-        top.addView(count, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        top.addView(button("全选", false, new View.OnClickListener() {
-            public void onClick(View v) {
-                adapterOf(forQueue).selectAll();
-                updateSelectionBars();
-            }
-        }));
-        top.addView(button("取消", false, new View.OnClickListener() {
-            public void onClick(View v) {
-                cancelSelection();
-            }
-        }));
-        bar.addView(top);
-
-        LinearLayout bottom = row();
-        LinearLayout.LayoutParams bottomP = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        bottomP.topMargin = dp(8);
-        bottom.setLayoutParams(bottomP);
-        bottom.addView(growButton("下载", true, new View.OnClickListener() {
-            public void onClick(View v) {
-                askDownloadScope(adapterOf(forQueue).pickedSongs());
-            }
-        }));
-        bottom.addView(growButton("加入歌单", false, new View.OnClickListener() {
-            public void onClick(View v) {
-                addSelectionToPlaylist(adapterOf(forQueue).pickedSongs());
-            }
-        }));
-        bottom.addView(growButton(forQueue ? "移除" : "删除", false, new View.OnClickListener() {
-            public void onClick(View v) {
-                List<Song> picked = adapterOf(forQueue).pickedSongs();
-                if (forQueue) removeSelectedFromQueue(picked);
-                else confirmDeleteMany(picked);
-            }
-        }));
-        bar.addView(bottom);
-
-        if (forQueue) queueSelCount = count;
-        else libSelCount = count;
-        return bar;
-    }
-
     private Button growButton(String label, boolean primary, View.OnClickListener click) {
         Button b = button(label, primary, click);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(38), 1f);
@@ -832,25 +904,27 @@ public class MainActivity extends Activity {
         return b;
     }
 
+    /** 播放队列的多选：同样是「换个内容」而不是「多加两行」。 */
+    private void setQueueSelecting(boolean on) {
+        if (queueAdapter == null) return;
+        queueAdapter.setSelecting(on);
+        if (queueHeadRow != null) queueHeadRow.setVisibility(on ? View.GONE : View.VISIBLE);
+        if (queueTipsRow != null) queueTipsRow.setVisibility(on ? View.GONE : View.VISIBLE);
+        if (queueSelHead != null) queueSelHead.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (queueSelActions != null) queueSelActions.setVisibility(on ? View.VISIBLE : View.GONE);
+        updateSelectionBars();
+    }
+
     private void updateSelectionBars() {
-        if (libSelBar != null && libAdapter != null) {
-            boolean on = libAdapter.isSelecting();
-            libSelBar.setVisibility(on ? View.VISIBLE : View.GONE);
-            if (on && libSelCount != null)
-                libSelCount.setText("已选 " + libAdapter.pickedCount() + " 首");
-        }
-        if (queueSelBar != null && queueAdapter != null) {
-            boolean on = queueAdapter.isSelecting();
-            queueSelBar.setVisibility(on ? View.VISIBLE : View.GONE);
-            if (on && queueSelCount != null)
-                queueSelCount.setText("已选 " + queueAdapter.pickedCount() + " 首");
-        }
+        if (libSelCount != null && libAdapter != null)
+            libSelCount.setText("已选 " + libAdapter.pickedCount() + " 首");
+        if (queueSelCount != null && queueAdapter != null)
+            queueSelCount.setText("已选 " + queueAdapter.pickedCount() + " 首");
     }
 
     private void cancelSelection() {
-        if (libAdapter != null) libAdapter.setSelecting(false);
-        if (queueAdapter != null) queueAdapter.setSelecting(false);
-        updateSelectionBars();
+        if (libAdapter != null && libAdapter.isSelecting()) setLibSelecting(false);
+        if (queueAdapter != null && queueAdapter.isSelecting()) setQueueSelecting(false);
     }
 
     /** 下载选中项：先问下音频 / 歌词 / 两者，再后台逐个下到系统「下载」目录。 */
@@ -1066,11 +1140,15 @@ public class MainActivity extends Activity {
     }
 
     private void showSortDialog() {
-        final String[] names = { "歌名", "歌手", "时长", "云盘顺序" };
+        final String[] names = { "歌名", "歌手", "时长", "云盘顺序", "重新扫描云盘" };
         new AlertDialog.Builder(this)
                 .setTitle("排序方式")
                 .setItems(names, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int which) {
+                        if (which == 4) {
+                            startScan(false);
+                            return;
+                        }
                         Prefs.setSortMode(MainActivity.this, which);
                         updateSortButton();
                         applyFilter();
@@ -1084,6 +1162,7 @@ public class MainActivity extends Activity {
         String[] names = { "歌名", "歌手", "时长", "云盘顺序" };
         int mode = Prefs.sortMode(this);
         sortButton.setText("排序：" + names[Math.max(0, Math.min(3, mode))]);
+        sortButton.setTextSize(13);
     }
 
     private void applyFilter() {
@@ -1100,7 +1179,7 @@ public class MainActivity extends Activity {
         }
         sortSongs(shown);
         libAdapter.setData(shown);
-        refreshPlaylistChips();
+        refreshFolderRows();
         if (libEmpty != null) {
             boolean empty = shown.isEmpty();
             libEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
@@ -1108,7 +1187,9 @@ public class MainActivity extends Activity {
             if (empty) {
                 libEmpty.setText(Store.songs.isEmpty()
                         ? "还没有歌曲。先在「设置」里连接云盘，再回来点「刷新」。"
-                        : "这个歌单里还没有歌。长按列表里的歌进入多选，可以「加入歌单」。");
+                        : playlistFilter.length() == 0
+                            ? "还没有歌。"
+                            : "这个歌单里还没有歌。长按列表里的歌进入多选，可以「加入歌单」。");
             }
         }
         updateSortButton();
@@ -1135,12 +1216,21 @@ public class MainActivity extends Activity {
         if (libInfo == null) return;
         if (message != null) {
             libInfo.setText(message);
+            if (libHomeInfo != null) libHomeInfo.setText(message);
             return;
         }
         if (Store.songs.isEmpty()) {
-            libInfo.setText(Store.scanning ? "正在读取云端目录…"
-                    : (Store.endpoint.length() == 0 ? "还没有连接云盘" : "云盘里还没有音频文件"));
+            String empty = Store.scanning ? "正在读取云端目录…"
+                    : (Store.endpoint.length() == 0 ? "还没有连接云盘" : "云盘里还没有音频文件");
+            libInfo.setText(empty);
+            if (libHomeInfo != null) libHomeInfo.setText(empty);
             return;
+        }
+        if (libHomeInfo != null) {
+            libHomeInfo.setText(Store.scanning ? "正在读取云端目录…"
+                    : "共 " + Store.songs.size() + " 首"
+                        + (Store.skippedUnsupported > 0
+                            ? "，已忽略 " + Store.skippedUnsupported + " 个不支持的文件" : ""));
         }
         int cached = 0;
         for (int i = 0; i < shown.size(); i++) {
@@ -1304,6 +1394,7 @@ public class MainActivity extends Activity {
         page.setPadding(dp(12), dp(12), dp(12), 0);
 
         LinearLayout head = row();
+        queueHeadRow = head;
         queueInfo = text("播放队列", 14, cText);
         head.addView(queueInfo, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -1314,19 +1405,56 @@ public class MainActivity extends Activity {
         }));
         page.addView(head);
 
+        // 多选时，上面那一行换成「完成 + 已选 + 全选」
+        queueSelHead = row();
+        queueSelHead.setVisibility(View.GONE);
+        queueSelHead.addView(button("完成", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                setQueueSelecting(false);
+            }
+        }));
+        queueSelCount = text("已选 0 首", 13, cText);
+        queueSelHead.addView(queueSelCount, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        queueSelHead.addView(button("全选", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                queueAdapter.selectAll();
+                updateSelectionBars();
+            }
+        }));
+        page.addView(queueSelHead);
+
         TextView tips = text("点歌曲立即播放；长按进入多选，可以批量下载、加入歌单、移除。", 12, cDim);
+        queueTipsRow = tips;
         LinearLayout.LayoutParams tipsP = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         tipsP.topMargin = dp(8);
         tips.setLayoutParams(tipsP);
         page.addView(tips);
 
-        queueSelBar = buildSelectionBar(true);
-        LinearLayout.LayoutParams selP = new LinearLayout.LayoutParams(
+        // 多选时，提示行换成三个批量操作
+        queueSelActions = row();
+        queueSelActions.setVisibility(View.GONE);
+        LinearLayout.LayoutParams queueSelP = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        selP.topMargin = dp(8);
-        queueSelBar.setLayoutParams(selP);
-        page.addView(queueSelBar);
+        queueSelP.topMargin = dp(8);
+        queueSelActions.setLayoutParams(queueSelP);
+        queueSelActions.addView(growButton("下载", true, new View.OnClickListener() {
+            public void onClick(View v) {
+                askDownloadScope(queueAdapter.pickedSongs());
+            }
+        }));
+        queueSelActions.addView(growButton("加入歌单", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                addSelectionToPlaylist(queueAdapter.pickedSongs());
+            }
+        }));
+        queueSelActions.addView(growButton("移除", false, new View.OnClickListener() {
+            public void onClick(View v) {
+                removeSelectedFromQueue(queueAdapter.pickedSongs());
+            }
+        }));
+        page.addView(queueSelActions);
 
         queueEmpty = text("播放队列是空的。到「音乐库」点歌名就会开始播放并加入队列。", 13, cDim);
         queueEmpty.setGravity(Gravity.CENTER);
@@ -1360,7 +1488,7 @@ public class MainActivity extends Activity {
                     showQueueMenu(position);
                     return true;
                 }
-                queueAdapter.setSelecting(true);
+                setQueueSelecting(true);
                 queueAdapter.toggle(songAt(Store.queue, position));
                 updateSelectionBars();
                 return true;
