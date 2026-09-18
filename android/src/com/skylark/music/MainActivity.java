@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
     private static final int REQ_STORAGE = 103;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.21";
+    public static final String VERSION = "3.3.22";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -668,19 +668,37 @@ public class MainActivity extends Activity {
             Integer have = counts.get(name);
             counts.put(name, have == null ? 1 : have + 1);
         }
-        List<String> names = new ArrayList<String>(counts.keySet());
+        // 歌单来源＝扫描到的文件夹（空歌单也在）+ 歌曲里出现过的歌单
+        Set<String> all = new java.util.LinkedHashSet<String>();
+        for (int i = 0; i < Store.playlists.size(); i++) {
+            String name = Store.playlists.get(i);
+            if (name.length() > 0) all.add(name);
+        }
+        all.addAll(counts.keySet());
+        List<String> names = new ArrayList<String>(all);
         Collections.sort(names, new Comparator<String>() {
             public int compare(String a, String b) {
                 return a.compareToIgnoreCase(b);
             }
         });
 
-        libFolders.addView(folderRow("全部歌曲", Store.songs.size() + " 首", "", false));
+        libFolders.addView(folderRow("全部歌曲", distinctCount() + " 首", "", false));
         for (int i = 0; i < names.size(); i++) {
             String name = names.get(i);
-            libFolders.addView(folderRow(name, counts.get(name) + " 首", name, false));
+            Integer count = counts.get(name);
+            libFolders.addView(folderRow(name, (count == null ? 0 : count) + " 首", name, false));
         }
         libFolders.addView(folderRow("＋ 新建歌单", "云盘上会新建一个同名文件夹", null, true));
+    }
+
+    /** 按「歌名 + 歌手」去重后的曲目数：一首歌放进两个歌单只算一首。 */
+    private static int distinctCount() {
+        Set<String> seen = new java.util.HashSet<String>();
+        for (int i = 0; i < Store.songs.size(); i++) {
+            Song s = Store.songs.get(i);
+            seen.add((s.title + "\u0001" + s.artist).toLowerCase(Locale.ROOT));
+        }
+        return seen.size();
     }
 
     /** 一行「文件夹」：图标 + 名字 + 说明 + 右箭头；value 为 null 表示「新建歌单」那一行。 */
@@ -1057,11 +1075,17 @@ public class MainActivity extends Activity {
     }
 
     private List<String> playlistNames() {
-        List<String> names = new ArrayList<String>();
+        // 跟音乐库首页一样：扫描到的文件夹（空歌单也在）+ 歌曲里出现过的歌单
+        Set<String> all = new java.util.LinkedHashSet<String>();
+        for (int i = 0; i < Store.playlists.size(); i++) {
+            String folder = Store.playlists.get(i);
+            if (folder.length() > 0) all.add(folder);
+        }
         for (int i = 0; i < Store.songs.size(); i++) {
             String name = Store.songs.get(i).playlist();
-            if (name.length() > 0 && !names.contains(name)) names.add(name);
+            if (name.length() > 0) all.add(name);
         }
+        List<String> names = new ArrayList<String>(all);
         Collections.sort(names, new Comparator<String>() {
             public int compare(String a, String b) {
                 return a.compareToIgnoreCase(b);
@@ -1184,6 +1208,7 @@ public class MainActivity extends Activity {
     private void applyFilter() {
         String query = search == null ? "" : search.getText().toString().trim().toLowerCase(Locale.ROOT);
         shown.clear();
+        Set<String> seen = new java.util.HashSet<String>();
         for (int i = 0; i < Store.songs.size(); i++) {
             Song s = Store.songs.get(i);
             if (playlistFilter.length() > 0 && !playlistFilter.equals(s.playlist())) continue;
@@ -1191,6 +1216,9 @@ public class MainActivity extends Activity {
                 String hay = (s.title + " " + s.artist + " " + s.fileName).toLowerCase(Locale.ROOT);
                 if (!hay.contains(query)) continue;
             }
+            // 「全部歌曲」里，同一首歌出现在多个歌单时只显示一次（进具体歌单能看到那份拷贝）
+            if (playlistFilter.length() == 0
+                    && !seen.add((s.title + "\u0001" + s.artist).toLowerCase(Locale.ROOT))) continue;
             shown.add(s);
         }
         sortSongs(shown);
@@ -2405,11 +2433,19 @@ public class MainActivity extends Activity {
                 try {
                     List<Cloud.Entry> entries = Cloud.listAll(endpoint);
                     final List<Song> found = new ArrayList<Song>();
+                    final List<String> folders = new ArrayList<String>();
                     Map<String, String> lyrics = new HashMap<String, String>();
                     Map<String, String> lyricStamps = new HashMap<String, String>();
                     for (int i = 0; i < entries.size(); i++) {
                         Cloud.Entry entry = entries.get(i);
-                        if (entry.dir) continue;
+                        if (entry.dir) {
+                            // 歌单＝文件夹：空文件夹也要记下来，建完立刻能看到
+                            String p = entry.path.startsWith("/") ? entry.path.substring(1) : entry.path;
+                            int slash = p.indexOf('/');
+                            String top = slash > 0 ? p.substring(0, slash) : p;
+                            if (top.length() > 0 && !folders.contains(top)) folders.add(top);
+                            continue;
+                        }
                         String ext = extOf(entry.name);
                         if ("lrc".equals(ext)) {
                             lyrics.put(baseOf(entry.name).toLowerCase(Locale.ROOT), entry.path);
@@ -2449,6 +2485,8 @@ public class MainActivity extends Activity {
                             if (token != scanToken) return;
                             Store.songs.clear();
                             Store.songs.addAll(found);
+                            Store.playlists.clear();
+                            Store.playlists.addAll(folders);
                             Store.skippedUnsupported = skippedCount;
                             Store.scanning = false;
                             Store.repoLabel = repo;

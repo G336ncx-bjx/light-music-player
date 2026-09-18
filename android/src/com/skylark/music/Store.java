@@ -22,6 +22,8 @@ public class Store {
 
     public static final List<Song> songs = new ArrayList<Song>();
     public static final List<Song> queue = new ArrayList<Song>();
+    /** 云盘上的歌单（＝文件夹名，含还没有歌的空歌单）。 */
+    public static final List<String> playlists = new ArrayList<String>();
     public static int index = -1;
     public static int mode = 1;          // 0 顺序 1 列表循环 2 单曲循环 3 随机
     public static String endpoint = "";
