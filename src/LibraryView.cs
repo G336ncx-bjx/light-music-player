@@ -20,6 +20,12 @@ namespace Skylark
         private readonly Border emptyState = new Border();
         /** 右键点在哪一行上（多选菜单要用它当「主行」）。 */
         private Song menuSong;
+        /** 批量编辑模式：行首出现复选框，点一行是勾选而不是播放。 */
+        private bool batchMode;
+        private readonly TextBlock selCount = Ui.Text("", 12.5, "TextMuted");
+        private StackPanel normalActions;
+        private StackPanel batchActions;
+        private Button batchButton;
         /** 列头所在的那一行：它的右边距要跟列表的实际可视宽度对齐（滚动条会占掉十几个像素）。 */
         private readonly Grid columns = new Grid();
 
@@ -46,17 +52,29 @@ namespace Skylark
             Button playAll = IconTextButton("play", "播放全部", "PrimaryButton", delegate { PlayAll(); });
             Button upload = IconTextButton("upload", "上传", "OutlineButton",
                 delegate { main.PickAndUploadFiles(); });
-            upload.ToolTip = "把本地歌曲 / 歌词上传到云盘分享目录（也可以直接把文件拖进窗口）";
-            Button download = IconTextButton("download", "下载", "OutlineButton",
-                delegate { main.DownloadSongs(GetSelectedSongs()); });
-            download.ToolTip = "把选中的歌下载到本地：可选只下音频 / 只下歌词 / 两者都下";
-            Button toPlaylist = IconTextButton("plus", "加入歌单", "OutlineButton",
-                delegate { main.AddSelectionToPlaylist(GetSelectedSongs()); });
-            toPlaylist.ToolTip = "把选中的歌复制进另一个歌单（歌会多出一份）";
-            Button remove = IconTextButton("trash", "删除", "OutlineButton",
-                delegate { main.DeleteSongs(GetSelectedSongs()); });
-            remove.ToolTip = "从云盘删除选中的歌（会二次确认）";
-            StackPanel headActions = Ui.Row(8, upload, download, toPlaylist, remove, playAll);
+            upload.ToolTip = "把本地歌曲 / 歌词上传到当前歌单（也可以直接把文件拖进窗口）";
+            batchButton = IconTextButton("check", "批量编辑", "OutlineButton",
+                delegate { SetBatchMode(!batchMode); });
+            batchButton.ToolTip = "批量编辑：点一行勾一首，然后批量下载 / 加入歌单 / 删除";
+            normalActions = Ui.Row(8, batchButton, upload, playAll);
+            normalActions.VerticalAlignment = VerticalAlignment.Center;
+
+            // 批量编辑模式下，标题右边换成批量操作
+            selCount.VerticalAlignment = VerticalAlignment.Center;
+            StackPanel selectAll = Ui.Row(8, selCount,
+                IconTextButton("check", "全选", "OutlineButton", delegate { list.SelectAll(); UpdateBatchCount(); }),
+                IconTextButton("download", "下载", "OutlineButton",
+                    delegate { main.DownloadSongs(GetSelectedSongs()); }),
+                IconTextButton("plus", "加入歌单", "OutlineButton",
+                    delegate { main.AddSelectionToPlaylist(GetSelectedSongs()); }),
+                IconTextButton("trash", "删除", "OutlineButton",
+                    delegate { main.DeleteSongs(GetSelectedSongs()); }),
+                Ui.Button("完成", "PrimaryButton", delegate { SetBatchMode(false); }));
+            batchActions = selectAll;
+            batchActions.VerticalAlignment = VerticalAlignment.Center;
+            batchActions.Visibility = Visibility.Collapsed;
+
+            StackPanel headActions = Ui.Row(8, normalActions, batchActions);
             headActions.VerticalAlignment = VerticalAlignment.Center;
 
             Grid headRow = new Grid();
@@ -105,7 +123,8 @@ namespace Skylark
             list.ItemContainerStyle = (Style)Application.Current.Resources["SongItem"];
             list.ItemTemplate = (DataTemplate)Application.Current.Resources["SongRowTemplate"];
             list.Padding = new Thickness(0, 2, 0, 8);
-            list.SelectionMode = SelectionMode.Extended;
+            list.SelectionMode = SelectionMode.Single;
+            list.SelectionChanged += delegate { UpdateBatchCount(); };
             list.MouseDoubleClick += OnDoubleClick;
             list.AddHandler(UIElement.MouseLeftButtonUpEvent,
                 new MouseButtonEventHandler(OnItemClick), true);
@@ -224,9 +243,11 @@ namespace Skylark
             {
                 song.IndexText = (i++).ToString(CultureInfo.InvariantCulture);
                 song.IsCurrent = song == main.CurrentSong;
+                song.BatchMode = batchMode;
             }
             list.ItemsSource = null;
             list.ItemsSource = songs;
+            UpdateBatchCount();
 
             string text = songs.Count.ToString(CultureInfo.InvariantCulture) + " 首";
             if (main.Library.Count != songs.Count)
@@ -281,7 +302,7 @@ namespace Skylark
 
         /// <summary>
         /// 单击整行：播放这一首（不进播放队列，队列只由「播放全部」和右键「添加到播放队列」维护）。
-        /// 按住 Ctrl / Shift 时只做多选，不触发播放；点行尾的下载图标则下载这一首。
+        /// 批量编辑模式下点一行是勾选；点行尾的下载图标则下载这一首。
         /// </summary>
         private void OnItemClick(object sender, MouseButtonEventArgs e)
         {
@@ -300,8 +321,43 @@ namespace Skylark
                 main.DownloadSongs(one);
                 return;
             }
-            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0) return;
+            if (batchMode) return;   // 勾选交给 ListBox 自己处理
             main.PlaySong(song);
+        }
+
+        /// <summary>进入 / 退出批量编辑：行首换成复选框，标题右边换成批量操作。</summary>
+        private void SetBatchMode(bool on)
+        {
+            batchMode = on;
+            normalActions.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+            batchActions.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            list.SelectionMode = on ? SelectionMode.Multiple : SelectionMode.Single;
+            if (!on) list.SelectedItems.Clear();
+            if (main.Library != null)
+                foreach (Song song in main.Library) song.BatchMode = on;
+            foreach (Song song in main.VisibleSongs) song.BatchMode = on;
+            UpdateBatchCount();
+        }
+
+        private void UpdateBatchCount()
+        {
+            if (selCount == null) return;
+            selCount.Text = "已选 " + list.SelectedItems.Count + " 首";
+        }
+
+        /// <summary>切页时退出批量编辑（音乐库和队列共用同一批 Song 对象）。</summary>
+        public void ExitBatch()
+        {
+            if (batchMode) SetBatchMode(false);
+        }
+
+        /// <summary>截图 / 自检用：进入批量编辑并勾上前 N 首。</summary>
+        public void BatchSelectForTest(int count)
+        {
+            SetBatchMode(true);
+            List<Song> songs = main.VisibleSongs;
+            for (int i = 0; i < count && i < songs.Count; i++) list.SelectedItems.Add(songs[i]);
+            UpdateBatchCount();
         }
 
         /// <summary>

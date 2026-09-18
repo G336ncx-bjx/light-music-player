@@ -31,6 +31,7 @@ namespace Skylark
         private string indexText = string.Empty;
         private string queueIndexText = string.Empty;
         private bool isCurrent;
+        private bool batchMode;
 
         public string Path { get; set; }
         public string FileName { get; set; }
@@ -116,6 +117,18 @@ namespace Skylark
                 if (isCurrent == value) return;
                 isCurrent = value;
                 Raise("IsCurrent");
+            }
+        }
+
+        /// <summary>批量编辑模式：列表行里的序号换成复选框。</summary>
+        public bool BatchMode
+        {
+            get { return batchMode; }
+            set
+            {
+                if (batchMode == value) return;
+                batchMode = value;
+                Raise("BatchMode");
             }
         }
 

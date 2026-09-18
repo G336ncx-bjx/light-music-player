@@ -17,6 +17,11 @@
                 <TextBlock x:Name="idx" Text="{Binding IndexText}" FontSize="12.5"
                            Foreground="{DynamicResource TextMuted}"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <!-- 批量编辑模式：序号换成复选框，勾的就是选中的 -->
+                <CheckBox x:Name="pick" Style="{StaticResource ModernCheckBox}" Visibility="Collapsed"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Focusable="False"
+                          IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}" />
             </Grid>
 
             <Grid Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
@@ -58,6 +63,10 @@
             <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True">
                 <Setter TargetName="downloadAction" Property="Opacity" Value="1" />
             </DataTrigger>
+            <DataTrigger Binding="{Binding BatchMode}" Value="True">
+                <Setter TargetName="idx" Property="Visibility" Value="Collapsed" />
+                <Setter TargetName="pick" Property="Visibility" Value="Visible" />
+            </DataTrigger>
             <DataTrigger Binding="{Binding IsCurrent}" Value="True">
                 <Setter TargetName="title" Property="Foreground" Value="{DynamicResource Accent}" />
                 <Setter TargetName="title" Property="FontWeight" Value="SemiBold" />
@@ -78,9 +87,15 @@
                 <ColumnDefinition Width="30" />
             </Grid.ColumnDefinitions>
 
-            <TextBlock x:Name="qidx" Grid.Column="0" Text="{Binding QueueIndexText}" FontSize="12.5"
-                       Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"
-                       VerticalAlignment="Center" />
+            <Grid Grid.Column="0">
+                <TextBlock x:Name="qidx" Text="{Binding QueueIndexText}" FontSize="12.5"
+                           Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+                <CheckBox x:Name="qpick" Style="{StaticResource ModernCheckBox}" Visibility="Collapsed"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Focusable="False"
+                          IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}" />
+            </Grid>
 
             <Grid Grid.Column="1" VerticalAlignment="Center" Margin="2,0,10,0">
                 <Grid.ColumnDefinitions>
@@ -120,6 +135,10 @@
             <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True">
                 <Setter TargetName="removeAction" Property="Opacity" Value="1" />
                 <Setter TargetName="downloadAction" Property="Opacity" Value="1" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding BatchMode}" Value="True">
+                <Setter TargetName="qidx" Property="Visibility" Value="Collapsed" />
+                <Setter TargetName="qpick" Property="Visibility" Value="Visible" />
             </DataTrigger>
         </DataTemplate.Triggers>
     </DataTemplate>

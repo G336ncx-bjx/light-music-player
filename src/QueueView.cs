@@ -19,6 +19,11 @@ namespace Skylark
         private readonly TextBlock emptyHint = Ui.Text("", 13, "TextMuted");
         /** 右键点在哪一行上（多选菜单要用它当「主行」）。 */
         private Song menuSong;
+        /** 批量编辑模式：行首出现复选框，点一行是勾选而不是播放。 */
+        private bool batchMode;
+        private readonly TextBlock selCount = Ui.Text("", 12.5, "TextMuted");
+        private StackPanel normalActions;
+        private StackPanel batchActions;
 
         public QueueView(MainWindow owner)
         {
@@ -36,15 +41,22 @@ namespace Skylark
             StackPanel headText = Ui.Column(0, title, summary);
             headText.VerticalAlignment = VerticalAlignment.Center;
 
-            Button downloadButton = Ui.Button("下载", "OutlineButton", delegate { main.DownloadSongs(GetSelectedSongs()); });
-            downloadButton.ToolTip = "把选中的歌下载到本地：可选只下音频 / 只下歌词 / 两者都下";
-            Button playlistButton = Ui.Button("加入歌单", "OutlineButton",
-                delegate { main.AddSelectionToPlaylist(GetSelectedSongs()); });
-            playlistButton.ToolTip = "把选中的歌复制进另一个歌单";
-            Button removeButton = Ui.Button("移除选中", "OutlineButton", delegate { RemoveSelected(); });
-            removeButton.ToolTip = "把选中的歌从播放队列里移除（不动云盘文件）";
             Button clearButton = Ui.Button("清空队列", "OutlineButton", delegate { main.ClearQueue(); });
-            StackPanel actions = Ui.Row(8, downloadButton, playlistButton, removeButton, clearButton);
+            Button batchButton = Ui.Button("批量编辑", "OutlineButton", delegate { SetBatchMode(!batchMode); });
+            batchButton.ToolTip = "批量编辑：点一行勾一首，然后批量下载 / 加入歌单 / 移除";
+            normalActions = Ui.Row(8, batchButton, clearButton);
+            normalActions.VerticalAlignment = VerticalAlignment.Center;
+
+            selCount.VerticalAlignment = VerticalAlignment.Center;
+            batchActions = Ui.Row(8, selCount,
+                Ui.Button("全选", "OutlineButton", delegate { list.SelectAll(); UpdateBatchCount(); }),
+                Ui.Button("下载", "OutlineButton", delegate { main.DownloadSongs(GetSelectedSongs()); }),
+                Ui.Button("加入歌单", "OutlineButton", delegate { main.AddSelectionToPlaylist(GetSelectedSongs()); }),
+                Ui.Button("移除", "OutlineButton", delegate { RemoveSelected(); }),
+                Ui.Button("完成", "PrimaryButton", delegate { SetBatchMode(false); }));
+            batchActions.VerticalAlignment = VerticalAlignment.Center;
+            batchActions.Visibility = Visibility.Collapsed;
+            StackPanel actions = Ui.Row(8, normalActions, batchActions);
             actions.VerticalAlignment = VerticalAlignment.Center;
 
             Grid header = new Grid();
@@ -62,7 +74,8 @@ namespace Skylark
             list.ItemContainerStyle = (Style)Application.Current.Resources["SongItem"];
             list.ItemTemplate = (DataTemplate)Application.Current.Resources["QueueRowTemplate"];
             list.Padding = new Thickness(0, 2, 0, 8);
-            list.SelectionMode = SelectionMode.Extended;
+            list.SelectionMode = SelectionMode.Single;
+            list.SelectionChanged += delegate { UpdateBatchCount(); };
             list.MouseDoubleClick += delegate(object sender, MouseButtonEventArgs e) { PlayAt(e); };
             list.AddHandler(UIElement.MouseLeftButtonUpEvent,
                 new MouseButtonEventHandler(delegate(object sender, MouseButtonEventArgs e) { PlayAt(e); }), true);
@@ -133,9 +146,33 @@ namespace Skylark
                 main.DownloadSongs(one);
                 return;
             }
-            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0) return;
+            if (batchMode) return;   // 勾选交给 ListBox 自己处理
             int idx = main.Queue.IndexOf(song);
             if (idx >= 0) main.PlayFrom(main.Queue, idx);
+        }
+
+        /// <summary>进入 / 退出批量编辑。</summary>
+        private void SetBatchMode(bool on)
+        {
+            batchMode = on;
+            normalActions.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+            batchActions.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            list.SelectionMode = on ? SelectionMode.Multiple : SelectionMode.Single;
+            if (!on) list.SelectedItems.Clear();
+            foreach (Song song in main.Queue) song.BatchMode = on;
+            UpdateBatchCount();
+        }
+
+        /// <summary>切页时退出批量编辑（音乐库和队列共用同一批 Song 对象）。</summary>
+        public void ExitBatch()
+        {
+            if (batchMode) SetBatchMode(false);
+        }
+
+        private void UpdateBatchCount()
+        {
+            if (selCount == null) return;
+            selCount.Text = "已选 " + list.SelectedItems.Count + " 首";
         }
 
         private static bool FindAction(DependencyObject source, string tag)
@@ -166,9 +203,11 @@ namespace Skylark
             {
                 song.QueueIndexText = (i++).ToString(CultureInfo.InvariantCulture);
                 song.IsCurrent = i - 1 == main.QueueIndex + 1;
+                song.BatchMode = batchMode;
             }
             list.ItemsSource = null;
             list.ItemsSource = songs;
+            UpdateBatchCount();
             summary.Text = songs.Count == 0 ? "队列为空" : songs.Count + " 首歌曲";
             emptyHint.Text = songs.Count == 0
                 ? "队列还是空的。\n在音乐库里单击歌名就开始播放，右键「添加到播放队列」可以把歌排进来。"

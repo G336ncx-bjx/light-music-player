@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -104,6 +105,30 @@ namespace Skylark
                 height = (int)Math.Ceiling(content.DesiredSize.Height) + 1;
                 Console.WriteLine("unlock button size: " + width + " x " + height
                     + " (含 4 倍放大预览见 unlock-btn-4x.png)");
+            }
+            else if (view == "library-batch")
+            {
+                root = window.Content as FrameworkElement;
+                window.LibraryViewRef.BatchSelectForTest(3);
+            }
+            else if (view == "download")
+            {
+                root = window.Content as FrameworkElement;
+                window.DownloadSongs(window.VisibleSongs.GetRange(0, 3));
+            }
+            else if (view == "playlist")
+            {
+                root = window.Content as FrameworkElement;
+                // 造几个歌单名出来，好看看选歌单的卡片长什么样
+                List<Song> demo = window.VisibleSongs;
+                string[] names = { "默认歌单", "通勤路上", "睡前循环" };
+                for (int i = 0; i < demo.Count; i++) demo[i].Playlist = names[i % names.Length];
+                window.AddSelectionToPlaylist(demo.GetRange(0, 2));
+            }
+            else if (view == "prompt")
+            {
+                root = window.Content as FrameworkElement;
+                window.NewPlaylist();
             }
             else
             {
