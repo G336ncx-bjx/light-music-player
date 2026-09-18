@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.15";
+    public static final String VERSION = "3.3.16";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -104,6 +104,8 @@ public class MainActivity extends Activity {
     private String lyricLoadedPath = "";
     private String lyricPendingPath = "";
     private long manualScrollUntil = 0;
+    /** 歌词页浮动的「回到当前歌词」按钮（滚离当前句时才出现）。 */
+    private TextView backToCurrent;
 
     // 设置
     private EditText linkInput, tokenInput;
@@ -952,7 +954,33 @@ public class MainActivity extends Activity {
         lyricBox.setPadding(dp(16), dp(120), dp(16), dp(120));
         lyricScroll.addView(lyricBox, new android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        page.addView(lyricScroll);
+
+        // 歌词区 + 浮在上面的「回到当前歌词」按钮
+        android.widget.FrameLayout lyricWrap = new android.widget.FrameLayout(this);
+        lyricWrap.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        lyricScroll.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        lyricWrap.addView(lyricScroll);
+
+        backToCurrent = text("回到当前歌词", 12, cText);
+        backToCurrent.setPadding(dp(14), dp(7), dp(14), dp(7));
+        backToCurrent.setBackground(round(cAlt, 18));
+        backToCurrent.setVisibility(View.GONE);
+        backToCurrent.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                manualScrollUntil = 0;
+                backToCurrent.setVisibility(View.GONE);
+                applyLyricHighlight(PlayerService.instance == null ? 0 : PlayerService.instance.position());
+            }
+        });
+        android.widget.FrameLayout.LayoutParams backP = new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        backP.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        backP.bottomMargin = dp(14);
+        lyricWrap.addView(backToCurrent, backP);
+
+        page.addView(lyricWrap);
         return page;
     }
 
@@ -1111,18 +1139,39 @@ public class MainActivity extends Activity {
             if (lyricLines.get(i).time <= time) index = i;
             else break;
         }
-        if (index == lyricIndex) return;
+        if (index == lyricIndex) {
+            updateBackToCurrent();
+            return;
+        }
         int previous = lyricIndex;
         lyricIndex = index;
         if (previous >= 0 && previous < lyricRows.size()) {
             setLineState(lyricRows.get(previous), false);
         }
         setLineState(lyricRows.get(index), true);
-        if (System.currentTimeMillis() < manualScrollUntil) return;
+        if (System.currentTimeMillis() < manualScrollUntil) {
+            updateBackToCurrent();
+            return;
+        }
         View target = lyricRows.get(index);
         int top = target.getTop() - (lyricScroll.getHeight() - target.getHeight()) / 2;
         if (top < 0) top = 0;
         lyricScroll.smoothScrollTo(0, top);
+        updateBackToCurrent();
+    }
+
+    /**
+     * 滚动位置离当前句太远时，浮出「回到当前歌词」按钮；回到当前句附近就收起来。
+     * 安卓这边手动滑动只是暂停 4 秒跟随，所以这个按钮主要是让用户随时能一键回到当前句。
+     */
+    private void updateBackToCurrent() {
+        if (backToCurrent == null || lyricRows.isEmpty() || lyricIndex < 0
+                || lyricIndex >= lyricRows.size()) return;
+        View target = lyricRows.get(lyricIndex);
+        int want = target.getTop() - (lyricScroll.getHeight() - target.getHeight()) / 2;
+        if (want < 0) want = 0;
+        boolean away = Math.abs(lyricScroll.getScrollY() - want) > dp(40);
+        backToCurrent.setVisibility(away ? View.VISIBLE : View.GONE);
     }
 
     private void setLineState(LinearLayout item, boolean active) {
