@@ -60,7 +60,7 @@ public class MainActivity extends Activity {
     private static final int REQ_NOTIFY = 102;
 
     /** 与 AndroidManifest.xml 的 versionName 保持一致。 */
-    public static final String VERSION = "3.3.16";
+    public static final String VERSION = "3.3.17";
 
     /** 系统播放器（MediaPlayer）原生支持的格式：mp3 / m4a / aac / wav / wma / flac / ogg / opus。 */
     private static final String[] AUDIO_EXT = { "mp3", "m4a", "aac", "wav", "wma", "flac", "ogg", "oga", "opus" };
@@ -104,6 +104,11 @@ public class MainActivity extends Activity {
     private String lyricLoadedPath = "";
     private String lyricPendingPath = "";
     private long manualScrollUntil = 0;
+    /**
+     * 正在做「自动滚动到当前句」的动画。这期间不更新「回到当前歌词」按钮的显隐，
+     * 否则动画途中取景短暂偏离当前句，按钮会闪一下。
+     */
+    private boolean autoScrolling;
     /** 歌词页浮动的「回到当前歌词」按钮（滚离当前句时才出现）。 */
     private TextView backToCurrent;
 
@@ -945,6 +950,7 @@ public class MainActivity extends Activity {
                 if (event.getAction() == MotionEvent.ACTION_DOWN
                         || event.getAction() == MotionEvent.ACTION_UP
                         || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                    autoScrolling = false;   // 用户接管，动画作废
                     manualScrollUntil = System.currentTimeMillis() + 4000;
                 }
                 return false;
@@ -971,9 +977,12 @@ public class MainActivity extends Activity {
             public void onClick(View v) {
                 manualScrollUntil = 0;
                 backToCurrent.setVisibility(View.GONE);
-                applyLyricHighlight(PlayerService.instance == null ? 0 : PlayerService.instance.position());
+                scrollToCurrentLine(true);
             }
         });
+        backToCurrent.setClickable(true);
+        backToCurrent.setFocusable(true);
+        backToCurrent.bringToFront();
         android.widget.FrameLayout.LayoutParams backP = new android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         backP.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
@@ -1075,6 +1084,9 @@ public class MainActivity extends Activity {
         lyricLines.clear();
         lyricLines.addAll(parsed.lines);
         lyricIndex = -1;
+        autoScrolling = false;
+        manualScrollUntil = 0;
+        if (backToCurrent != null) backToCurrent.setVisibility(View.GONE);
         lyricBox.removeAllViews();
         lyricRows.clear();
         if (lyricLines.isEmpty()) {
@@ -1106,6 +1118,9 @@ public class MainActivity extends Activity {
                 public void onClick(View v) {
                     PlayerService service = PlayerService.instance;
                     if (service == null || !lyricsSynced) return;
+                    // 点某一句＝跳过去听，顺便恢复自动跟随
+                    manualScrollUntil = 0;
+                    backToCurrent.setVisibility(View.GONE);
                     double offset = Store.lyricOffset(MainActivity.this, Store.current());
                     service.seekTo(Math.max(0, line.time - offset));
                 }
@@ -1153,11 +1168,26 @@ public class MainActivity extends Activity {
             updateBackToCurrent();
             return;
         }
-        View target = lyricRows.get(index);
+        scrollToCurrentLine(true);
+        updateBackToCurrent();
+    }
+
+    /** 平滑滚到当前正在唱的那一句（「回到当前歌词」按钮和自动跟随都用它）。 */
+    private void scrollToCurrentLine(boolean smooth) {
+        if (lyricRows.isEmpty() || lyricIndex < 0 || lyricIndex >= lyricRows.size()) return;
+        View target = lyricRows.get(lyricIndex);
         int top = target.getTop() - (lyricScroll.getHeight() - target.getHeight()) / 2;
         if (top < 0) top = 0;
-        lyricScroll.smoothScrollTo(0, top);
-        updateBackToCurrent();
+        autoScrolling = true;
+        if (smooth) lyricScroll.smoothScrollTo(0, top);
+        else lyricScroll.scrollTo(0, top);
+        // 动画大概几百毫秒，结束后再允许按钮跟随滚动位置更新
+        lyricScroll.postDelayed(new Runnable() {
+            public void run() {
+                autoScrolling = false;
+                updateBackToCurrent();
+            }
+        }, 700);
     }
 
     /**
@@ -1170,6 +1200,8 @@ public class MainActivity extends Activity {
         View target = lyricRows.get(lyricIndex);
         int want = target.getTop() - (lyricScroll.getHeight() - target.getHeight()) / 2;
         if (want < 0) want = 0;
+        // 自动滚动动画途中不更新，避免「换行的一瞬间闪一下」
+        if (autoScrolling) return;
         boolean away = Math.abs(lyricScroll.getScrollY() - want) > dp(40);
         backToCurrent.setVisibility(away ? View.VISIBLE : View.GONE);
     }
