@@ -18,6 +18,8 @@ namespace Skylark
         private readonly Button headTitle = new Button();
         private readonly Button headArtist = new Button();
         private readonly Border emptyState = new Border();
+        /** 右键点在哪一行上（多选菜单要用它当「主行」）。 */
+        private Song menuSong;
         /** 列头所在的那一行：它的右边距要跟列表的实际可视宽度对齐（滚动条会占掉十几个像素）。 */
         private readonly Grid columns = new Grid();
 
@@ -42,10 +44,19 @@ namespace Skylark
             head.Margin = new Thickness(2, 0, 0, 12);
 
             Button playAll = IconTextButton("play", "播放全部", "PrimaryButton", delegate { PlayAll(); });
-            Button upload = IconTextButton("upload", "上传歌曲", "OutlineButton",
+            Button upload = IconTextButton("upload", "上传", "OutlineButton",
                 delegate { main.PickAndUploadFiles(); });
             upload.ToolTip = "把本地歌曲 / 歌词上传到云盘分享目录（也可以直接把文件拖进窗口）";
-            StackPanel headActions = Ui.Row(8, upload, playAll);
+            Button download = IconTextButton("download", "下载", "OutlineButton",
+                delegate { main.DownloadSongs(GetSelectedSongs()); });
+            download.ToolTip = "把选中的歌下载到本地：可选只下音频 / 只下歌词 / 两者都下";
+            Button toPlaylist = IconTextButton("plus", "加入歌单", "OutlineButton",
+                delegate { main.AddSelectionToPlaylist(GetSelectedSongs()); });
+            toPlaylist.ToolTip = "把选中的歌复制进另一个歌单（歌会多出一份）";
+            Button remove = IconTextButton("trash", "删除", "OutlineButton",
+                delegate { main.DeleteSongs(GetSelectedSongs()); });
+            remove.ToolTip = "从云盘删除选中的歌（会二次确认）";
+            StackPanel headActions = Ui.Row(8, upload, download, toPlaylist, remove, playAll);
             headActions.VerticalAlignment = VerticalAlignment.Center;
 
             Grid headRow = new Grid();
@@ -69,6 +80,8 @@ namespace Skylark
             columns.ColumnDefinitions[2].Width = Ui.Px(190);
             columns.ColumnDefinitions.Add(new ColumnDefinition());
             columns.ColumnDefinitions[3].Width = Ui.Px(40);
+            columns.ColumnDefinitions.Add(new ColumnDefinition());
+            columns.ColumnDefinitions[4].Width = Ui.Px(30);
 
             Style headerStyle = (Style)Application.Current.Resources["ColumnHeader"];
             SetupHeader(headIndex, "序号", headerStyle, SortField.Default);
@@ -92,7 +105,7 @@ namespace Skylark
             list.ItemContainerStyle = (Style)Application.Current.Resources["SongItem"];
             list.ItemTemplate = (DataTemplate)Application.Current.Resources["SongRowTemplate"];
             list.Padding = new Thickness(0, 2, 0, 8);
-            list.SelectionMode = SelectionMode.Single;
+            list.SelectionMode = SelectionMode.Extended;
             list.MouseDoubleClick += OnDoubleClick;
             list.AddHandler(UIElement.MouseLeftButtonUpEvent,
                 new MouseButtonEventHandler(OnItemClick), true);
@@ -260,11 +273,16 @@ namespace Skylark
 
         private void OnDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            Song song = SongAt(e.OriginalSource as DependencyObject);
+            DependencyObject source = e.OriginalSource as DependencyObject;
+            if (FindAction(source, "download")) return;
+            Song song = SongAt(source);
             if (song != null) main.PlaySong(song);
         }
 
-        /// <summary>单击整行：播放这一首，并把它加入播放列表（已在列表里则不重复添加）。</summary>
+        /// <summary>
+        /// 单击整行：播放这一首（不进播放队列，队列只由「播放全部」和右键「添加到播放队列」维护）。
+        /// 按住 Ctrl / Shift 时只做多选，不触发播放；点行尾的下载图标则下载这一首。
+        /// </summary>
         private void OnItemClick(object sender, MouseButtonEventArgs e)
         {
             DependencyObject source = e.OriginalSource as DependencyObject;
@@ -274,6 +292,15 @@ namespace Skylark
             if (item == null) return;
             Song song = item.DataContext as Song;
             if (song == null) return;
+
+            if (FindAction(source, "download"))
+            {
+                List<Song> one = new List<Song>();
+                one.Add(song);
+                main.DownloadSongs(one);
+                return;
+            }
+            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0) return;
             main.PlaySong(song);
         }
 
@@ -328,46 +355,130 @@ namespace Skylark
             return source as T;
         }
 
+        /// <summary>从点击位置往上找带 Tag 的行内小按钮（下载图标等）。</summary>
+        private static bool FindAction(DependencyObject source, string tag)
+        {
+            while (source != null)
+            {
+                FrameworkElement element = source as FrameworkElement;
+                if (element != null && element.Tag != null && object.Equals(element.Tag, tag)) return true;
+                source = VisualTreeHelper.GetParent(source);
+            }
+            return false;
+        }
+
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Key == Key.A && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+            {
+                list.SelectAll();
+                e.Handled = true;
+                return;
+            }
             if (e.Key != Key.Enter) return;
             Song song = list.SelectedItem as Song;
             if (song != null) main.PlaySong(song);
         }
 
+        /// <summary>当前选中的歌（Ctrl 点选、Shift 连选、Ctrl+A 全选）。</summary>
+        public List<Song> GetSelectedSongs()
+        {
+            List<Song> result = new List<Song>();
+            foreach (object entry in list.SelectedItems)
+            {
+                Song song = entry as Song;
+                if (song != null) result.Add(song);
+            }
+            return result;
+        }
+
+        private static bool IsIn(List<Song> songs, Song song)
+        {
+            for (int i = 0; i < songs.Count; i++) if (songs[i] == song) return true;
+            return false;
+        }
+
+        /// <summary>右键：点在已选中的行上保留整片选中，点在别处则只选中这一行。</summary>
         private void OnRightDown(object sender, MouseButtonEventArgs e)
         {
             ListBoxItem item = FindItem(e.OriginalSource as DependencyObject);
             if (item == null) return;
-            // 单选模式下只能用 SelectedItem / IsSelected
-            if (!item.IsSelected) item.IsSelected = true;
+            menuSong = item.DataContext as Song;
+            if (!item.IsSelected)
+            {
+                list.SelectedItems.Clear();
+                item.IsSelected = true;
+            }
         }
 
         private void OnContextMenu(object sender, ContextMenuEventArgs e)
         {
-            Song song = list.SelectedItem as Song;
-            if (song == null)
+            List<Song> songs = GetSelectedSongs();
+            if (songs.Count == 0 && menuSong == null)
             {
                 e.Handled = true;
                 return;
             }
-            list.ContextMenu = BuildMenu(song);
+            if (songs.Count <= 1)
+            {
+                Song song = songs.Count == 1 ? songs[0] : menuSong;
+                list.ContextMenu = BuildMenu(song);
+                return;
+            }
+            if (menuSong != null && !IsIn(songs, menuSong)) songs.Add(menuSong);
+            list.ContextMenu = BuildMenu(songs, menuSong != null ? menuSong : songs[0]);
         }
 
+        /// <summary>单首歌的右键菜单。</summary>
         private ContextMenu BuildMenu(Song song)
         {
+            if (song == null) return null;
+            List<Song> one = new List<Song>();
+            one.Add(song);
             ContextMenu menu = new ContextMenu();
             menu.Items.Add(MenuItemFor("立即播放", delegate { main.PlaySong(song); }));
             menu.Items.Add(MenuItemFor("下一首播放", delegate { main.PlayNextInQueue(song); }));
             menu.Items.Add(MenuItemFor("添加到播放队列", delegate { main.Enqueue(song, false); }));
             menu.Items.Add(new Separator());
+            menu.Items.Add(MenuItemFor("下载…", delegate { main.DownloadSongs(one); }));
+            menu.Items.Add(MenuItemFor("加入歌单…", delegate { main.AddSelectionToPlaylist(one); }));
+            menu.Items.Add(new Separator());
             menu.Items.Add(MenuItemFor("在资源管理器中显示", delegate { main.RevealInExplorer(song); }));
             if (main.CanDeleteCloud && song.IsCloud)
             {
-                menu.Items.Add(MenuItemFor("从云盘删除…", delegate { main.DeleteFromCloud(song); }));
+                menu.Items.Add(MenuItemFor("从云盘删除…", delegate { main.DeleteSongs(one); }));
             }
-            menu.Items.Add(MenuItemFor("从音乐库移除", delegate { main.RemoveFromLibrary(song); }));
+            else
+            {
+                menu.Items.Add(MenuItemFor("从音乐库移除", delegate { main.DeleteSongs(one); }));
+            }
             return menu;
+        }
+
+        /// <summary>多选时的右键菜单（下载 / 加入歌单 / 删除都对整片选中生效）。</summary>
+        private ContextMenu BuildMenu(List<Song> songs, Song anchor)
+        {
+            ContextMenu menu = new ContextMenu();
+            string count = songs.Count.ToString(CultureInfo.InvariantCulture);
+            menu.Items.Add(MenuItemFor("播放选中的 " + count + " 首", delegate { main.PlayFrom(songs, 0); }));
+            menu.Items.Add(MenuItemFor("添加到播放队列", delegate { AddAllToQueue(songs); }));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MenuItemFor("下载选中的 " + count + " 首…", delegate { main.DownloadSongs(songs); }));
+            menu.Items.Add(MenuItemFor("加入歌单…", delegate { main.AddSelectionToPlaylist(songs); }));
+            menu.Items.Add(new Separator());
+            bool cloud = false;
+            for (int i = 0; i < songs.Count; i++) if (songs[i].IsCloud) cloud = true;
+            if (main.CanDeleteCloud && cloud)
+                menu.Items.Add(MenuItemFor("从云盘删除选中的 " + count + " 首…", delegate { main.DeleteSongs(songs); }));
+            else
+                menu.Items.Add(MenuItemFor("从音乐库移除选中的 " + count + " 首", delegate { main.DeleteSongs(songs); }));
+            return menu;
+        }
+
+        private void AddAllToQueue(List<Song> songs)
+        {
+            foreach (Song song in songs) main.Enqueue(song, false);
+            main.ShowToast("已把 " + songs.Count + " 首加到播放队列末尾");
         }
 
         private static MenuItem MenuItemFor(string text, RoutedEventHandler handler)

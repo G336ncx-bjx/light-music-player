@@ -10,6 +10,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="190" />
                 <ColumnDefinition Width="40" />
+                <ColumnDefinition Width="30" />
             </Grid.ColumnDefinitions>
 
             <Grid Grid.Column="0">
@@ -40,10 +41,22 @@
                 <TextBlock Text="词" FontSize="10" Foreground="{DynamicResource Accent}" />
             </Border>
 
+            <!-- 每首歌右侧的下载按钮（音频 / 歌词 / 两者） -->
+            <Border x:Name="downloadAction" Grid.Column="4" Style="{StaticResource RowAction}"
+                    Tag="download" Opacity="0.45" ToolTip="下载这首歌（音频 / 歌词 / 两者）"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Path Data="M12 3.6 V15 M7 10 L12 15.6 L17 10 M5.6 19.2 H18.4"
+                      Stroke="{DynamicResource TextDim}" StrokeThickness="2" Stretch="Uniform"
+                      Width="12" Height="12" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+            </Border>
+
         </Grid>
         <DataTemplate.Triggers>
             <DataTrigger Binding="{Binding HasLyrics}" Value="True">
                 <Setter TargetName="lyricBadge" Property="Visibility" Value="Visible" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True">
+                <Setter TargetName="downloadAction" Property="Opacity" Value="1" />
             </DataTrigger>
             <DataTrigger Binding="{Binding IsCurrent}" Value="True">
                 <Setter TargetName="title" Property="Foreground" Value="{DynamicResource Accent}" />
@@ -62,6 +75,7 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="180" />
                 <ColumnDefinition Width="36" />
+                <ColumnDefinition Width="30" />
             </Grid.ColumnDefinitions>
 
             <TextBlock x:Name="qidx" Grid.Column="0" Text="{Binding QueueIndexText}" FontSize="12.5"
@@ -88,6 +102,14 @@
                       StrokeThickness="2" Stretch="Uniform" Width="11" Height="11"
                       StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
             </Border>
+
+            <Border x:Name="downloadAction" Grid.Column="4" Style="{StaticResource RowAction}"
+                    Tag="download" Opacity="0.4" ToolTip="下载这首歌（音频 / 歌词 / 两者）"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Path Data="M12 3.6 V15 M7 10 L12 15.6 L17 10 M5.6 19.2 H18.4"
+                      Stroke="{DynamicResource TextDim}" StrokeThickness="2" Stretch="Uniform"
+                      Width="12" Height="12" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+            </Border>
         </Grid>
         <DataTemplate.Triggers>
             <DataTrigger Binding="{Binding IsCurrent}" Value="True">
@@ -97,6 +119,7 @@
             </DataTrigger>
             <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=IsMouseOver}" Value="True">
                 <Setter TargetName="removeAction" Property="Opacity" Value="1" />
+                <Setter TargetName="downloadAction" Property="Opacity" Value="1" />
             </DataTrigger>
         </DataTemplate.Triggers>
     </DataTemplate>

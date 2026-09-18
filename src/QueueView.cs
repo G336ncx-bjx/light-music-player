@@ -17,6 +17,8 @@ namespace Skylark
         private readonly ListBox list = new ListBox();
         private readonly TextBlock summary = Ui.Text("", 12.5, "TextMuted");
         private readonly TextBlock emptyHint = Ui.Text("", 13, "TextMuted");
+        /** 右键点在哪一行上（多选菜单要用它当「主行」）。 */
+        private Song menuSong;
 
         public QueueView(MainWindow owner)
         {
@@ -34,10 +36,15 @@ namespace Skylark
             StackPanel headText = Ui.Column(0, title, summary);
             headText.VerticalAlignment = VerticalAlignment.Center;
 
+            Button downloadButton = Ui.Button("下载", "OutlineButton", delegate { main.DownloadSongs(GetSelectedSongs()); });
+            downloadButton.ToolTip = "把选中的歌下载到本地：可选只下音频 / 只下歌词 / 两者都下";
+            Button playlistButton = Ui.Button("加入歌单", "OutlineButton",
+                delegate { main.AddSelectionToPlaylist(GetSelectedSongs()); });
+            playlistButton.ToolTip = "把选中的歌复制进另一个歌单";
+            Button removeButton = Ui.Button("移除选中", "OutlineButton", delegate { RemoveSelected(); });
+            removeButton.ToolTip = "把选中的歌从播放队列里移除（不动云盘文件）";
             Button clearButton = Ui.Button("清空队列", "OutlineButton", delegate { main.ClearQueue(); });
-            Button saveButton = Ui.Button("导出 M3U", "OutlineButton", delegate { ExportM3u(); });
-            Button loadButton = Ui.Button("导入 M3U", "OutlineButton", delegate { ImportM3u(); });
-            StackPanel actions = Ui.Row(8, clearButton, loadButton, saveButton);
+            StackPanel actions = Ui.Row(8, downloadButton, playlistButton, removeButton, clearButton);
             actions.VerticalAlignment = VerticalAlignment.Center;
 
             Grid header = new Grid();
@@ -55,23 +62,40 @@ namespace Skylark
             list.ItemContainerStyle = (Style)Application.Current.Resources["SongItem"];
             list.ItemTemplate = (DataTemplate)Application.Current.Resources["QueueRowTemplate"];
             list.Padding = new Thickness(0, 2, 0, 8);
+            list.SelectionMode = SelectionMode.Extended;
             list.MouseDoubleClick += delegate(object sender, MouseButtonEventArgs e) { PlayAt(e); };
             list.AddHandler(UIElement.MouseLeftButtonUpEvent,
                 new MouseButtonEventHandler(delegate(object sender, MouseButtonEventArgs e) { PlayAt(e); }), true);
+            list.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.Key != Key.A || (Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+                list.SelectAll();
+                e.Handled = true;
+            };
             list.PreviewMouseRightButtonDown += delegate(object sender, MouseButtonEventArgs e)
             {
                 ListBoxItem item = FindItem(e.OriginalSource as DependencyObject);
-                if (item != null) item.IsSelected = true;
+                if (item == null) return;
+                menuSong = item.DataContext as Song;
+                if (item.IsSelected) return;
+                list.SelectedItems.Clear();
+                item.IsSelected = true;
             };
             list.ContextMenuOpening += delegate(object sender, ContextMenuEventArgs e)
             {
-                Song song = list.SelectedItem as Song;
-                if (song == null)
+                List<Song> songs = GetSelectedSongs();
+                if (songs.Count == 0 && menuSong == null)
                 {
                     e.Handled = true;
                     return;
                 }
-                list.ContextMenu = BuildMenu(song);
+                if (songs.Count <= 1)
+                {
+                    list.ContextMenu = BuildMenu(songs.Count == 1 ? songs[0] : menuSong);
+                    return;
+                }
+                if (menuSong != null && songs.IndexOf(menuSong) < 0) songs.Add(menuSong);
+                list.ContextMenu = BuildMenu(songs, menuSong != null ? menuSong : songs[0]);
             };
 
             Grid listHost = new Grid();
@@ -102,6 +126,14 @@ namespace Skylark
                 main.RemoveFromQueue(song);
                 return;
             }
+            if (FindAction(source, "download"))
+            {
+                List<Song> one = new List<Song>();
+                one.Add(song);
+                main.DownloadSongs(one);
+                return;
+            }
+            if ((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0) return;
             int idx = main.Queue.IndexOf(song);
             if (idx >= 0) main.PlayFrom(main.Queue, idx);
         }
@@ -139,23 +171,78 @@ namespace Skylark
             list.ItemsSource = songs;
             summary.Text = songs.Count == 0 ? "队列为空" : songs.Count + " 首歌曲";
             emptyHint.Text = songs.Count == 0
-                ? "队列还是空的。\n在音乐库里双击歌曲播放，或右键「添加到播放队列」。"
+                ? "队列还是空的。\n在音乐库里单击歌名就开始播放，右键「添加到播放队列」可以把歌排进来。"
                 : "";
             emptyHint.Visibility = songs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private ContextMenu BuildMenu(Song song)
         {
+            if (song == null) return null;
+            List<Song> one = new List<Song>();
+            one.Add(song);
             ContextMenu menu = new ContextMenu();
             menu.Items.Add(MenuItemFor("立即播放", delegate { main.PlayFrom(main.Queue, main.Queue.IndexOf(song)); }));
             menu.Items.Add(MenuItemFor("下一首播放", delegate { main.PlayNextInQueue(song); }));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MenuItemFor("下载…", delegate { main.DownloadSongs(one); }));
+            menu.Items.Add(MenuItemFor("加入歌单…", delegate { main.AddSelectionToPlaylist(one); }));
             menu.Items.Add(new Separator());
             menu.Items.Add(MenuItemFor("上移", delegate { main.MoveInQueue(main.Queue.IndexOf(song), main.Queue.IndexOf(song) - 1); }));
             menu.Items.Add(MenuItemFor("下移", delegate { main.MoveInQueue(main.Queue.IndexOf(song), main.Queue.IndexOf(song) + 1); }));
             menu.Items.Add(new Separator());
             menu.Items.Add(MenuItemFor("在资源管理器中显示", delegate { main.RevealInExplorer(song); }));
             menu.Items.Add(MenuItemFor("从队列中移除", delegate { main.RemoveFromQueue(song); }));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MenuItemFor("导出 M3U…", delegate { ExportM3u(); }));
+            menu.Items.Add(MenuItemFor("导入 M3U…", delegate { ImportM3u(); }));
             return menu;
+        }
+
+        /// <summary>多选时的右键菜单。</summary>
+        private ContextMenu BuildMenu(List<Song> songs, Song anchor)
+        {
+            ContextMenu menu = new ContextMenu();
+            string count = songs.Count.ToString(CultureInfo.InvariantCulture);
+            menu.Items.Add(MenuItemFor("播放选中的 " + count + " 首", delegate { PlaySelected(songs); }));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MenuItemFor("下载选中的 " + count + " 首…", delegate { main.DownloadSongs(songs); }));
+            menu.Items.Add(MenuItemFor("加入歌单…", delegate { main.AddSelectionToPlaylist(songs); }));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MenuItemFor("从队列中移除选中的 " + count + " 首", delegate { main.RemoveFromQueue(songs); }));
+            return menu;
+        }
+
+        private void PlaySelected(List<Song> songs)
+        {
+            if (songs == null || songs.Count == 0) return;
+            // 队列是按顺序播的，所以从「选中的第一首」在队列里的位置往下播
+            int at = main.Queue.IndexOf(songs[0]);
+            if (at >= 0) main.PlayFrom(main.Queue, at);
+        }
+
+        /// <summary>移除选中的歌（多选菜单 / 顶部按钮都用它）。</summary>
+        private void RemoveSelected()
+        {
+            List<Song> songs = GetSelectedSongs();
+            if (songs.Count == 0)
+            {
+                main.ShowToast("先选中歌曲（Ctrl / Shift 可多选）");
+                return;
+            }
+            main.RemoveFromQueue(songs);
+        }
+
+        /// <summary>当前选中的歌（Ctrl 点选、Shift 连选、Ctrl+A 全选）。</summary>
+        public List<Song> GetSelectedSongs()
+        {
+            List<Song> result = new List<Song>();
+            foreach (object entry in list.SelectedItems)
+            {
+                Song song = entry as Song;
+                if (song != null) result.Add(song);
+            }
+            return result;
         }
 
         private static MenuItem MenuItemFor(string text, RoutedEventHandler handler)

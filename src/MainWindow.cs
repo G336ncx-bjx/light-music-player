@@ -1568,12 +1568,32 @@ namespace Skylark
             uploading = true;
             string url = CloudEndpoint;
             List<string> batch = files;
+            // 歌单＝云盘文件夹：在哪里点的「上传」就传进哪个歌单；没选歌单就进「默认歌单」，
+            // 都没有才落到云盘根目录。
+            string targetDir = "/";
+            string targetLabel = "云盘根目录";
+            if (playlistFilter.Length > 0)
+            {
+                targetDir = PlaylistDir(playlistFilter);
+                targetLabel = "歌单「" + playlistFilter + "」";
+            }
+            else
+            {
+                List<string> names = PlaylistNames();
+                if (names.Contains("默认歌单"))
+                {
+                    targetDir = PlaylistDir("默认歌单");
+                    targetLabel = "歌单「默认歌单」";
+                }
+            }
             if (statusText != null) statusText.Text = "正在上传 0/" + batch.Count + "…";
+            ShowToast("正在上传 " + batch.Count + " 个文件到" + targetLabel);
 
             ThreadPool.QueueUserWorkItem(delegate
             {
                 int ok = 0;
                 List<string> failed = new List<string>();
+                bool dirReady = targetDir == "/";
                 for (int i = 0; i < batch.Count; i++)
                 {
                     string path = batch[i];
@@ -1581,8 +1601,13 @@ namespace Skylark
                     int index = i + 1;
                     try
                     {
+                        if (!dirReady)
+                        {
+                            CloudClient.EnsureDir(url, targetDir);
+                            dirReady = true;
+                        }
                         bool replaced;
-                        CloudClient.Upload(url, path, "/", delegate(long done, long total)
+                        CloudClient.Upload(url, path, targetDir, delegate(long done, long total)
                         {
                             int percent = total > 0 ? (int)(done * 100 / total) : 0;
                             Dispatcher.BeginInvoke((Action)delegate
@@ -1606,7 +1631,7 @@ namespace Skylark
                     UpdateStatusText();
                     if (failed.Count == 0)
                     {
-                        ShowToast("已上传 " + ok + " 个文件到云盘");
+                        ShowToast("已上传 " + ok + " 个文件到" + targetLabel);
                     }
                     else
                     {
@@ -1704,6 +1729,193 @@ namespace Skylark
         }
 
         // ---------------- 歌单（一个云盘文件夹＝一个歌单） ----------------
+
+        private static string lastDownloadDir;
+
+        /// <summary>下载选中的歌：先问「下什么」（音频 / 歌词 / 两者），再后台下载。</summary>
+        public void DownloadSongs(List<Song> songs)
+        {
+            if (songs == null || songs.Count == 0)
+            {
+                ShowToast("先在列表里选中歌曲（Ctrl / Shift 可多选）");
+                return;
+            }
+            if (string.IsNullOrEmpty(lastDownloadDir))
+            {
+                string music = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+                lastDownloadDir = string.IsNullOrEmpty(music)
+                    ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                    : music;
+            }
+            string dir = lastDownloadDir;
+            List<Song> picked = new List<Song>(songs);
+
+            Window dialog = new Window();
+            dialog.Title = "下载 " + picked.Count + " 首";
+            dialog.Owner = this;
+            dialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            dialog.Width = 460;
+            dialog.SizeToContent = SizeToContent.Height;
+            dialog.ResizeMode = ResizeMode.NoResize;
+            dialog.Background = (Brush)Application.Current.Resources["Window"];
+            dialog.FontFamily = Ui.Font;
+
+            TextBlock where = Ui.Text("保存到：" + dir, 12, "TextMuted");
+            where.TextWrapping = TextWrapping.Wrap;
+            Button change = Ui.Button("更改目录…", "OutlineButton", delegate
+            {
+                Forms.FolderBrowserDialog pick = new Forms.FolderBrowserDialog();
+                pick.Description = "选择下载保存的位置";
+                pick.SelectedPath = lastDownloadDir;
+                if (pick.ShowDialog() == Forms.DialogResult.OK)
+                {
+                    lastDownloadDir = pick.SelectedPath;
+                    where.Text = "保存到：" + lastDownloadDir;
+                }
+            });
+            Button audioOnly = Ui.Button("只下音频", "PrimaryButton",
+                delegate { StartDownload(picked, dir, true, false); dialog.Close(); });
+            Button lyricOnly = Ui.Button("只下歌词", "OutlineButton",
+                delegate { StartDownload(picked, dir, false, true); dialog.Close(); });
+            Button both = Ui.Button("音频 + 歌词", "OutlineButton",
+                delegate { StartDownload(picked, dir, true, true); dialog.Close(); });
+            dialog.Content = Ui.Column(10, where, Ui.Row(8, change),
+                Ui.Text("选一种：", 12.5, "TextMuted"), Ui.Row(8, audioOnly, lyricOnly, both));
+            dialog.ShowDialog();
+        }
+
+        private void StartDownload(List<Song> songs, string dir, bool audio, bool lyrics)
+        {
+            lastDownloadDir = dir;
+            string endpoint = CloudEndpoint;
+            ShowToast("正在下载 " + songs.Count + " 首…");
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                int ok = 0;
+                int failed = 0;
+                for (int i = 0; i < songs.Count; i++)
+                {
+                    try
+                    {
+                        if (audio) DownloadOne(songs[i], dir, endpoint);
+                        if (lyrics) DownloadLyric(songs[i], dir, endpoint);
+                        ok++;
+                    }
+                    catch (Exception)
+                    {
+                        failed++;
+                    }
+                }
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    ShowToast("下载完成：成功 " + ok + " 首"
+                        + (failed > 0 ? "，失败 " + failed + " 首" : "") + " → " + dir);
+                });
+            });
+        }
+
+        private void DownloadOne(Song song, string dir, string endpoint)
+        {
+            string target = System.IO.Path.Combine(dir, song.FileName);
+            if (!song.IsCloud)
+            {
+                System.IO.File.Copy(song.Path, target, true);
+                return;
+            }
+            CloudClient.DownloadTo(endpoint, song.CloudPath, target, null);
+        }
+
+        /// <summary>下载这首歌的歌词（没有歌词就跳过）。</summary>
+        private void DownloadLyric(Song song, string dir, string endpoint)
+        {
+            string target = System.IO.Path.Combine(dir,
+                System.IO.Path.ChangeExtension(song.FileName, ".lrc"));
+            if (!song.IsCloud)
+            {
+                string local = System.IO.Path.ChangeExtension(song.Path, ".lrc");
+                if (System.IO.File.Exists(local)) System.IO.File.Copy(local, target, true);
+                return;
+            }
+            if (string.IsNullOrEmpty(song.LyricPath)) return;
+            string prefix = CloudLibrary.PseudoScheme + CloudClient.ParseToken(endpoint);
+            string path = song.LyricPath.StartsWith(prefix, StringComparison.Ordinal)
+                ? song.LyricPath.Substring(prefix.Length)
+                : song.LyricPath;
+            CloudClient.DownloadTo(endpoint, path, target, null);
+        }
+
+        /// <summary>从云盘删除选中的歌（连同同名歌词），会二次确认。</summary>
+        public void DeleteSongsFromCloud(List<Song> songs)
+        {
+            if (songs == null || songs.Count == 0)
+            {
+                ShowToast("先在列表里选中歌曲（Ctrl / Shift 可多选）");
+                return;
+            }
+            if (!IsCloudSource || !CanDeleteCloud)
+            {
+                ShowToast("当前是分享链接模式，删不了云端文件");
+                return;
+            }
+            MessageBoxResult answer = MessageBox.Show(this,
+                "从云盘删除选中的 " + songs.Count + " 首歌？\n\n" +
+                "这是直接从云盘上删，连同同名歌词一起删掉；\n" +
+                "删了就找不回来了，只能自己去云盘的历史记录里翻。",
+                "从云盘删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+            if (answer != MessageBoxResult.OK) return;
+
+            List<Song> picked = new List<Song>(songs);
+            string endpoint = CloudEndpoint;
+            RunCloudAction("删除", delegate
+            {
+                foreach (Song song in picked)
+                {
+                    if (!song.IsCloud) continue;
+                    string dir = string.IsNullOrEmpty(song.Playlist) ? "/" : PlaylistDir(song.Playlist);
+                    List<string> items = new List<string>();
+                    items.Add(song.FileName);
+                    items.Add(System.IO.Path.ChangeExtension(song.FileName, ".lrc"));
+                    try
+                    {
+                        CloudClient.DeleteFiles(endpoint, dir, items);
+                    }
+                    catch (Exception)
+                    {
+                        // 没有歌词时整批会失败，退一步只删音频
+                        CloudClient.DeleteFiles(endpoint, dir,
+                            new List<string>(new string[] { song.FileName }));
+                    }
+                }
+            });
+        }
+
+        /// <summary>把选中项移出播放队列（不动云盘文件）。</summary>
+        public void RemoveFromQueue(List<Song> songs)
+        {
+            if (songs == null || songs.Count == 0) return;
+            bool removedCurrent = false;
+            foreach (Song song in songs)
+            {
+                int at = queue.IndexOf(song);
+                if (at < 0) continue;
+                queue.RemoveAt(at);
+                if (at < queueIndex) queueIndex--;
+                else if (at == queueIndex) removedCurrent = true;
+            }
+            if (queue.Count == 0)
+            {
+                queueIndex = -1;
+                if (removedCurrent) StopAndClear();
+            }
+            else if (removedCurrent)
+            {
+                if (queueIndex >= queue.Count) queueIndex = queue.Count - 1;
+                if (queueIndex < 0) queueIndex = 0;
+                PlayCurrent(true);
+            }
+            UpdateQueueState();
+            Raise(QueueChanged);
+        }
 
         /// <summary>在后台执行云盘操作，完成后自动重扫曲库。</summary>
         private void RunCloudAction(string label, Action work)
@@ -1863,6 +2075,70 @@ namespace Skylark
                 Ui.Row(8, ok, cancel));
             dialog.ShowDialog();
             return picked;
+        }
+
+        /// <summary>当前曲库里出现过的歌单名（歌单＝云盘上的一个文件夹）。</summary>
+        public List<string> PlaylistNames()
+        {
+            List<string> names = new List<string>();
+            for (int i = 0; i < library.Count; i++)
+            {
+                string name = library[i].Playlist;
+                if (!string.IsNullOrEmpty(name) && !names.Contains(name)) names.Add(name);
+            }
+            names.Sort(StringComparer.CurrentCultureIgnoreCase);
+            return names;
+        }
+
+        /// <summary>「加入歌单」：先让用户选一个歌单，再把选中的歌复制过去。</summary>
+        public void AddSelectionToPlaylist(List<Song> songs)
+        {
+            if (songs == null || songs.Count == 0)
+            {
+                ShowToast("先选中歌曲（Ctrl / Shift 可多选）");
+                return;
+            }
+            List<string> names = PlaylistNames();
+            if (names.Count == 0)
+            {
+                ShowToast("还没有歌单，先在左侧栏「＋ 新建歌单」");
+                return;
+            }
+            string target = PickPlaylist(names);
+            if (string.IsNullOrEmpty(target)) return;
+            AddSongsToPlaylist(songs, target);
+        }
+
+        /// <summary>
+        /// 删除选中的歌：云盘令牌模式＝从云盘删（二次确认）；本地文件夹模式＝只从列表隐藏；
+        /// 分享链接模式＝删不了云端文件。
+        /// </summary>
+        public void DeleteSongs(List<Song> songs)
+        {
+            if (songs == null || songs.Count == 0)
+            {
+                ShowToast("先选中歌曲（Ctrl / Shift 可多选）");
+                return;
+            }
+            bool hasCloud = false;
+            for (int i = 0; i < songs.Count; i++) if (songs[i].IsCloud) hasCloud = true;
+
+            if (!hasCloud)
+            {
+                foreach (Song song in songs)
+                {
+                    if (!settings.Hidden.Contains(song.Path)) settings.Hidden.Add(song.Path);
+                    library.Remove(song);
+                    queue.Remove(song);
+                }
+                SaveSettings();
+                ApplyFilter();
+                Raise(QueueChanged);
+                Raise(LibraryChanged);
+                ShowToast("已从音乐库移除 " + songs.Count + " 首（本地文件没动）");
+                return;
+            }
+            DeleteSongsFromCloud(songs);
         }
 
         /// <summary>极简输入框（新建 / 重命名歌单）。</summary>
