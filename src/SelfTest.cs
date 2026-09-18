@@ -188,6 +188,23 @@ namespace Skylark
             LyricDocument plain = LrcParser.Parse("第一行\n第二行\n");
             Check("歌词：纯文本歌词", !plain.Synced && plain.Lines.Count == 2, plain.Lines.Count + " 行");
 
+            // 中文歌里夹一句英文副歌：整篇没有重复时间戳 → 不该把它当成上一句的译文
+            LyricDocument hook = LrcParser.Parse(
+                "[ti:星辰大海]\n" +
+                "[00:15.49]我愿变成一颗恒星\n" +
+                "[00:21.34]守护海底的蜂鸣\n" +
+                "[00:26.71]It's my dream it's magic\n" +
+                "[00:29.55]照亮你的心\n");
+            bool hookOk = hook.Lines.Count == 4
+                && hook.Lines[1].Text == "守护海底的蜂鸣"
+                && string.IsNullOrEmpty(hook.Lines[1].Translation)
+                && hook.Lines[2].Text == "It's my dream it's magic"
+                && string.IsNullOrEmpty(hook.Lines[2].Translation);
+            string hookDetail = "";
+            foreach (LyricLine line in hook.Lines)
+                hookDetail += "[" + line.Text + "|" + line.Translation + "]";
+            Check("歌词：中文歌里的英文副歌不算译文", hookOk, hookDetail);
+
             // 用真实的音乐目录做一次批量解析
             string dir = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
             if (!Directory.Exists(dir)) return;

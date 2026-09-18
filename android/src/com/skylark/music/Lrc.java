@@ -110,6 +110,11 @@ public class Lrc {
         if (isAutoTitleLine(lines.get(0).text, titleTag, artistTag)) lines.remove(0);
         if (lines.isEmpty()) return lines;
 
+        // 双语歌词的「原文＋译文」时间戳必定成对（相同，或译文被标成下一句的时间）。
+        // 整篇没有重复时间戳 → 这文件没有译文，别硬配：中文歌里夹的英文副歌
+        //（例如《星辰大海》的 It's my dream it's magic）会被当成上一句的译文。
+        if (!hasRepeatedTimestamp(lines)) return lines;
+
         int zh = 0, ja = 0, latin = 0;
         for (int i = 0; i < lines.size(); i++) {
             String kind = scriptOf(lines.get(i).text);
@@ -175,6 +180,14 @@ public class Lrc {
     }
 
     /** 这首歌是不是「标准排版」：同一时间戳的成对行里，原文语言出现在前的次数不少于在后。 */
+    /** 整篇有没有两行共用同一个时间戳（双语文件必定有；纯单语文件不会有）。 */
+    private static boolean hasRepeatedTimestamp(List<Line> lines) {
+        for (int i = 0; i + 1 < lines.size(); i++) {
+            if (Math.abs(lines.get(i + 1).time - lines.get(i).time) <= 0.02) return true;
+        }
+        return false;
+    }
+
     private static boolean prefersGroupLayout(List<Line> lines, String original) {
         int firstWins = 0, secondWins = 0;
         for (int i = 0; i + 1 < lines.size(); i++) {

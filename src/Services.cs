@@ -461,6 +461,11 @@ namespace Skylark
             if (IsAutoTitleLine(lines[0].Text, titleTag, artistTag)) lines.RemoveAt(0);
             if (lines.Count == 0) return lines;
 
+            // 双语歌词里「原文＋译文」的时间戳必定成对：要么两者相同，要么译文被标成下一句的时间
+            //（那样也会跟下一句撞上）。整篇一个重复时间戳都没有 → 这文件根本没有译文，别硬配，
+            // 否则中文歌里夹的英文副歌（例如《星辰大海》的 It's my dream it's magic）会被当成上一句的译文。
+            if (!HasRepeatedTimestamp(lines)) return lines;
+
             int zh = 0, ja = 0, latin = 0;
             for (int i = 0; i < lines.Count; i++)
             {
@@ -536,6 +541,18 @@ namespace Skylark
                 pending = line;
             }
             return result;
+        }
+
+        /// <summary>
+        /// 整篇有没有两行共用同一个时间戳（双语文件必定有；纯单语文件不会有）。
+        /// </summary>
+        private static bool HasRepeatedTimestamp(List<LyricLine> lines)
+        {
+            for (int i = 0; i + 1 < lines.Count; i++)
+            {
+                if (Math.Abs(lines[i + 1].Time - lines[i].Time) <= 0.02) return true;
+            }
+            return false;
         }
 
         /// <summary>
