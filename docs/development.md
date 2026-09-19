@@ -11,7 +11,12 @@ scripts/make-android-icon.ps1 生成安卓图标（圆角方形 + 自适应图�
 scripts/icon-artwork.ps1     两个平台共用的图标绘制代码
 scripts/install.ps1          构建 + 创建桌面 / 开始菜单快捷方式
 src/Program.cs               入口：单实例、自检 / 截图 / 冒烟 / 各种命令行工具
-src/MainWindow.cs            主窗口：外壳、播放调度、托盘、全局热键、设置持久化
+src/MainWindow.cs            主窗口外壳：字段、播放控制、托盘、全局热键、设置持久化
+src/MainWindow.Ui.cs         主窗口界面构建（顶栏 / 侧栏 / 播放条 / 提示条）
+src/MainWindow.Library.cs    曲库：扫描、过滤、排序、下载、删除、歌单
+src/MainWindow.Playback.cs   播放调度：打开曲目、云盘缓存、进度与歌词同步
+src/MainWindow.Upload.cs     上传到云盘
+src/Modal.cs                 应用内弹窗卡片（下载 / 加入歌单 / 新建歌单…）
 src/LibraryView.cs           音乐库视图（列表 / 排序 / 右键菜单）
 src/QueueView.cs             播放队列视图（增删排序 / M3U 导入导出）
 src/LyricsView.cs            软件内歌词页（逐行高亮 + 平滑滚动）
@@ -27,6 +32,12 @@ src/Theme.cs                 配色、矢量图标、控件工厂
 android/build.ps1            安卓构建（aapt2 → javac → d8 → zipalign → apksigner）
 android/AndroidManifest.xml  清单（权限、前台播放服务、分享上传入口）
 android/src/…                安卓源码（界面 / 前台服务 / 云盘 / 歌词 / 设置）
+android/src/…/AppShell.java        安卓基础层：调色板、控件工厂、通用刷新
+android/src/…/LibraryScreen.java   安卓音乐库层：歌单、多选、下载、扫描、上传
+android/src/…/PlayerScreen.java    安卓播放层：播放条、播放队列、歌词页
+android/src/…/SettingsScreen.java  安卓设置层：设置页、应用内更新
+android/src/…/MainActivity.java    安卓入口：生命周期与页面组装（继承上面四层）
+android/src/…/SongAdapter.java     音乐库 / 队列共用的列表适配器
 android/tools/SelfTest.java  安卓端纯 Java 逻辑自检
 ```
 
